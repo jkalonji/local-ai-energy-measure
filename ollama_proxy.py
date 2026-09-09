@@ -24,7 +24,7 @@ import argparse
 import json
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from csv_log import append_row
@@ -43,8 +43,17 @@ class ProxyHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         self._forward(stat=False)
 
+    def do_HEAD(self) -> None:
+        self._forward(stat=False)
+
     def do_POST(self) -> None:
         self._forward(stat=self.path in STAT_PATHS)
+
+    def do_PUT(self) -> None:
+        self._forward(stat=False)
+
+    def do_PATCH(self) -> None:
+        self._forward(stat=False)
 
     def do_DELETE(self) -> None:
         self._forward(stat=False)
@@ -61,6 +70,16 @@ class ProxyHandler(BaseHTTPRequestHandler):
         call_start = time.time()
         try:
             upstream = urlopen(req)
+        except HTTPError as e:
+            # A real error response from Ollama itself (e.g. model not found) -
+            # relay its actual status and body instead of masking it.
+            self.send_response(e.code)
+            for key, value in e.headers.items():
+                if key.lower() not in HOP_BY_HOP_HEADERS:
+                    self.send_header(key, value)
+            self.end_headers()
+            self.wfile.write(e.read())
+            return
         except URLError as e:
             self.send_response(502)
             self.end_headers()
