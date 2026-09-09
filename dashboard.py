@@ -6,6 +6,9 @@ ollama_proxy.py) and displays:
   tracker is currently running)
 - a cumulative cost curve (USD), based on a selectable country's
   electricity price (see pricing.py / config/electricity_prices.json)
+- if ollama_proxy.py was used: tokens, generation speed (tokens/s),
+  and the exact GPU energy/load attributed to each Ollama call, plus a
+  playful rowing-machine energy equivalent (see human_analogy.py)
 
 Each run of energy_tracker.py writes its own timestamped file under
 logs/ (see log_paths.py). By default this dashboard always follows the
@@ -16,13 +19,16 @@ Run with:
     streamlit run dashboard.py
 """
 
+import csv
 from pathlib import Path
 from typing import Optional
 
 import pandas as pd
 import streamlit as st
 
+from attribution import attribute_calls
 from csv_log import CSV_FIELDS
+from human_analogy import format_rowing_equivalent
 from log_paths import LOGS_DIR, latest_log_file, list_log_files
 from pricing import get_prices_usd_per_kwh
 
@@ -66,20 +72,49 @@ NUMERIC_FIELDS = [
     "call_start_ts", "call_end_ts", "prompt_tokens", "completion_tokens", "total_tokens", "tps",
 ]
 
+# Old (pre row_type/gpu_util_pct/Ollama) log schema, still written by any
+# tracker process started before this schema existed.
+OLD_SCHEMA_FIELDS = ["timestamp", "elapsed_s", "power_w", "energy_wh_cumulative"]
+
+
+def _parse_row(fields: list[str]) -> Optional[dict]:
+    """Map one raw CSV row to a CSV_FIELDS dict, by its actual width.
+
+    A single file can mix old-schema and new-schema rows (e.g. a
+    tracker process started before an update keeps writing old rows,
+    while ollama_proxy.py appends new-schema rows to the same file) -
+    each row is parsed independently rather than trusting the file's
+    single header line for every row.
+    """
+    if fields in (CSV_FIELDS, OLD_SCHEMA_FIELDS):
+        return None  # header line
+    if len(fields) == len(CSV_FIELDS):
+        return dict(zip(CSV_FIELDS, fields))
+    if len(fields) == len(OLD_SCHEMA_FIELDS):
+        row = dict(zip(OLD_SCHEMA_FIELDS, fields))
+        row["row_type"] = "sample"
+        return row
+    return None  # malformed/unrecognized row width
+
 
 def read_log(path: Path) -> pd.DataFrame:
-    """Read a log file and normalize it to the current CSV_FIELDS schema.
-
-    Older logs (written before row_type/gpu_util_pct/Ollama columns
-    existed) only have timestamp/elapsed_s/power_w/energy_wh_cumulative;
-    those are treated as all-"sample" rows with the newer columns empty.
-    """
+    """Read a log file and normalize it to the current CSV_FIELDS schema."""
     if not path.exists() or path.stat().st_size == 0:
         return pd.DataFrame(columns=CSV_FIELDS)
-    df = pd.read_csv(path, on_bad_lines="skip", engine="python")
-    df = df.reindex(columns=CSV_FIELDS)
-    if "row_type" in df.columns:
-        df["row_type"] = df["row_type"].fillna("sample")
+
+    rows = []
+    with path.open(newline="", encoding="utf-8") as f:
+        for fields in csv.reader(f):
+            if not fields:
+                continue
+            row = _parse_row(fields)
+            if row is not None:
+                rows.append(row)
+
+    df = pd.DataFrame(rows, columns=CSV_FIELDS)
+    if df.empty:
+        return df
+    df["row_type"] = df["row_type"].fillna("sample")
     for col in NUMERIC_FIELDS:
         df[col] = pd.to_numeric(df[col], errors="coerce")
     return df
@@ -131,6 +166,42 @@ def _render_charts(
 
     st.subheader(f"Cumulative cost (USD) — {country} rate ({price_usd_per_kwh:.4f} $/kWh)")
     st.line_chart(samples.set_index("elapsed_min")["cost_usd_cumulative"])
+
+    calls = df[df["row_type"] == "ollama_call"].dropna(subset=["model", "call_start_ts", "call_end_ts"])
+    if not calls.empty:
+        calls = attribute_calls(samples, calls).sort_values("call_start_ts")
+        attributed_energy = calls["energy_wh_call"].dropna().sum()
+        unattributed = int(calls["energy_wh_call"].isna().sum())
+
+        st.subheader("🦙 Ollama usage")
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Calls", len(calls))
+        c2.metric("Total tokens", f"{int(calls['total_tokens'].sum()):,}")
+        c3.metric("Avg speed", f"{calls['tps'].mean():.1f} tok/s")
+        c4.metric("Energy equivalent", format_rowing_equivalent(attributed_energy))
+
+        if unattributed:
+            st.caption(
+                f"⚠️ {unattributed} call(s) couldn't be matched to GPU samples "
+                f"(the tracker wasn't running for that window)."
+            )
+
+        table = calls[[
+            "model", "prompt_tokens", "completion_tokens", "total_tokens",
+            "tps", "energy_wh_call", "avg_gpu_util_call",
+        ]].rename(columns={
+            "model": "Model",
+            "prompt_tokens": "Prompt tok.",
+            "completion_tokens": "Completion tok.",
+            "total_tokens": "Total tok.",
+            "tps": "Tokens/s",
+            "energy_wh_call": "Energy (Wh)",
+            "avg_gpu_util_call": "Avg GPU load (%)",
+        })
+        st.dataframe(table, use_container_width=True, hide_index=True)
+
+        st.subheader("Generation speed (tokens/s) per call")
+        st.bar_chart(calls.reset_index(drop=True)["tps"])
 
 
 render_charts = st.fragment(run_every=refresh_s if live else None)(_render_charts)
