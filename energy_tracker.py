@@ -5,6 +5,8 @@ from pathlib import Path
 
 from pynvml import nvmlDeviceGetHandleByIndex, nvmlDeviceGetPowerUsage, nvmlInit
 
+from log_paths import new_log_path
+
 CSV_FIELDS = ["timestamp", "elapsed_s", "power_w", "energy_wh_cumulative"]
 
 
@@ -14,12 +16,15 @@ def track(log_path: Path, interval_s: float = 1.0) -> None:
     energy_wh = 0.0
     t0 = time.time()
 
+    log_path.parent.mkdir(parents=True, exist_ok=True)
     is_new_file = not log_path.exists()
     log_file = log_path.open("a", newline="", encoding="utf-8")
     writer = csv.writer(log_file)
     if is_new_file:
         writer.writerow(CSV_FIELDS)
         log_file.flush()
+
+    print(f"Logging to {log_path}")
 
     try:
         while True:
@@ -45,8 +50,10 @@ def main() -> None:
     parser.add_argument(
         "--log-file",
         type=Path,
-        default=Path("energy_log.csv"),
-        help="Path to the CSV file to append readings to (default: energy_log.csv).",
+        default=None,
+        help="Path to the CSV file to write readings to. Defaults to a new "
+             "timestamped file under logs/ (e.g. logs/energy_20250909_143000.csv), "
+             "so every run gets its own file instead of reusing the previous one.",
     )
     parser.add_argument(
         "--interval",
@@ -55,7 +62,8 @@ def main() -> None:
         help="Seconds between two readings (default: 1.0).",
     )
     args = parser.parse_args()
-    track(args.log_file, args.interval)
+    log_path = args.log_file if args.log_file is not None else new_log_path()
+    track(log_path, args.interval)
 
 
 if __name__ == "__main__":

@@ -1,19 +1,26 @@
 """Streamlit dashboard for the GPU energy tracker.
 
-Reads the CSV log written by energy_tracker.py and displays:
+Reads the CSV log(s) written by energy_tracker.py and displays:
 - a power-over-time curve (live if the tracker is currently running)
 - a cumulative cost curve (USD), based on a selectable country's
   electricity price (see pricing.py / config/electricity_prices.json)
+
+Each run of energy_tracker.py writes its own timestamped file under
+logs/ (see log_paths.py). By default this dashboard always follows the
+most recent one, so restarting the tracker automatically switches the
+dashboard to the new run without any manual action.
 
 Run with:
     streamlit run dashboard.py
 """
 
 from pathlib import Path
+from typing import Optional
 
 import pandas as pd
 import streamlit as st
 
+from log_paths import LOGS_DIR, latest_log_file, list_log_files
 from pricing import get_prices_usd_per_kwh
 
 st.set_page_config(page_title="GPU Energy Dashboard", page_icon="⚡", layout="wide")
@@ -21,7 +28,17 @@ st.title("⚡ GPU Energy Consumption Dashboard")
 
 with st.sidebar:
     st.header("Settings")
-    log_path_str = st.text_input("CSV log file", value="energy_log.csv")
+    auto_latest = st.checkbox("Always use the most recent log file", value=True)
+    selected_path_str: Optional[str] = None
+    if not auto_latest:
+        if st.button("🔄 Refresh file list"):
+            st.rerun()
+        available = list_log_files()
+        options = [str(p) for p in available]
+        if options:
+            selected_path_str = st.selectbox("Log file", options=options)
+        else:
+            st.warning(f"No log files found in `{LOGS_DIR}/`.")
     live = st.checkbox("Live refresh", value=True)
     refresh_s = st.slider("Refresh interval (s)", 1, 30, 3, disabled=not live)
 
@@ -48,13 +65,31 @@ def read_log(path: Path) -> pd.DataFrame:
     return pd.read_csv(path, on_bad_lines="skip", engine="python")
 
 
-def _render_charts(log_path_str: str, country: str, price_usd_per_kwh: float) -> None:
-    df = read_log(Path(log_path_str))
+def _render_charts(
+    auto_latest: bool,
+    selected_path_str: Optional[str],
+    country: str,
+    price_usd_per_kwh: float,
+) -> None:
+    if auto_latest:
+        log_path = latest_log_file()
+        if log_path is None:
+            st.info(
+                f"Waiting for data. Start the tracker in another terminal:\n\n"
+                f"`python energy_tracker.py`\n\n"
+                f"Each run creates a new file in `{LOGS_DIR}/`."
+            )
+            return
+    else:
+        if not selected_path_str:
+            st.info("No log file selected.")
+            return
+        log_path = Path(selected_path_str)
+
+    st.caption(f"Reading: `{log_path}`")
+    df = read_log(log_path)
     if df.empty:
-        st.info(
-            f"Waiting for data. Start the tracker in another terminal:\n\n"
-            f"`python energy_tracker.py --log-file {log_path_str}`"
-        )
+        st.info("This log file is empty so far.")
         return
 
     df["elapsed_min"] = df["elapsed_s"] / 60
@@ -73,4 +108,4 @@ def _render_charts(log_path_str: str, country: str, price_usd_per_kwh: float) ->
 
 
 render_charts = st.fragment(run_every=refresh_s if live else None)(_render_charts)
-render_charts(log_path_str, country, prices[country])
+render_charts(auto_latest, selected_path_str, country, prices[country])
