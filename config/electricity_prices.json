@@ -1,0 +1,28 @@
+{
+  "_comment": "Approximate average residential electricity prices per kWh, local currency. Manually curated, to be refreshed periodically. Exchange rates to USD are fetched live from frankfurter.app (ECB rates) at dashboard startup.",
+  "France": {
+    "currency": "EUR",
+    "price_per_kwh": 0.2516,
+    "source": "EDF Tarif Bleu (regulated residential rate), 2024"
+  },
+  "USA": {
+    "currency": "USD",
+    "price_per_kwh": 0.1672,
+    "source": "EIA average residential retail electricity price, 2024"
+  },
+  "China": {
+    "currency": "CNY",
+    "price_per_kwh": 0.60,
+    "source": "Average residential tariff, tiered pricing varies by province, ~2024"
+  },
+  "DR Congo": {
+    "currency": "USD",
+    "price_per_kwh": 0.071,
+    "source": "Approximate SNEL residential rate; USD used directly since the Congolese Franc (CDF) is not tracked by the exchange-rate API and public data is scarce/volatile. High uncertainty."
+  },
+  "Brazil": {
+    "currency": "BRL",
+    "price_per_kwh": 0.82,
+    "source": "ANEEL average residential tariff including taxes, ~2024"
+  }
+}
