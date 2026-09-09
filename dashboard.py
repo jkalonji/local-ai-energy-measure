@@ -17,13 +17,13 @@ import streamlit as st
 from pricing import get_prices_usd_per_kwh
 
 st.set_page_config(page_title="GPU Energy Dashboard", page_icon="⚡", layout="wide")
-st.title("⚡ Suivi de consommation énergétique GPU")
+st.title("⚡ GPU Energy Consumption Dashboard")
 
 with st.sidebar:
-    st.header("Réglages")
-    log_path_str = st.text_input("Fichier de log CSV", value="energy_log.csv")
-    live = st.checkbox("Rafraîchissement live", value=True)
-    refresh_s = st.slider("Intervalle de rafraîchissement (s)", 1, 30, 3, disabled=not live)
+    st.header("Settings")
+    log_path_str = st.text_input("CSV log file", value="energy_log.csv")
+    live = st.checkbox("Live refresh", value=True)
+    refresh_s = st.slider("Refresh interval (s)", 1, 30, 3, disabled=not live)
 
 
 @st.cache_resource
@@ -35,11 +35,11 @@ def load_prices() -> dict[str, float]:
 prices = load_prices()
 
 with st.sidebar:
-    country = st.selectbox("Pays (tarif électricité)", options=list(prices.keys()), index=0)
-    st.caption(f"Tarif retenu : {prices[country]:.4f} $/kWh")
-    with st.expander("Tous les tarifs (USD/kWh)"):
+    country = st.selectbox("Country (electricity rate)", options=list(prices.keys()), index=0)
+    st.caption(f"Selected rate: {prices[country]:.4f} $/kWh")
+    with st.expander("All rates (USD/kWh)"):
         for c, p in prices.items():
-            st.write(f"{c} : {p:.4f} $/kWh")
+            st.write(f"{c}: {p:.4f} $/kWh")
 
 
 def read_log(path: Path) -> pd.DataFrame:
@@ -52,7 +52,7 @@ def _render_charts(log_path_str: str, country: str, price_usd_per_kwh: float) ->
     df = read_log(Path(log_path_str))
     if df.empty:
         st.info(
-            f"En attente de données. Lance le tracker dans un autre terminal :\n\n"
+            f"Waiting for data. Start the tracker in another terminal:\n\n"
             f"`python energy_tracker.py --log-file {log_path_str}`"
         )
         return
@@ -61,14 +61,14 @@ def _render_charts(log_path_str: str, country: str, price_usd_per_kwh: float) ->
     df["cost_usd_cumulative"] = df["energy_wh_cumulative"] / 1000 * price_usd_per_kwh
 
     col1, col2, col3 = st.columns(3)
-    col1.metric("Puissance actuelle", f"{df['power_w'].iloc[-1]:.1f} W")
-    col2.metric("Énergie totale", f"{df['energy_wh_cumulative'].iloc[-1] / 1000:.4f} kWh")
-    col3.metric(f"Coût total ({country})", f"${df['cost_usd_cumulative'].iloc[-1]:.4f}")
+    col1.metric("Current power", f"{df['power_w'].iloc[-1]:.1f} W")
+    col2.metric("Total energy", f"{df['energy_wh_cumulative'].iloc[-1] / 1000:.4f} kWh")
+    col3.metric(f"Total cost ({country})", f"${df['cost_usd_cumulative'].iloc[-1]:.4f}")
 
-    st.subheader("Consommation électrique (W) au cours du temps")
+    st.subheader("Power consumption (W) over time")
     st.line_chart(df.set_index("elapsed_min")["power_w"])
 
-    st.subheader(f"Coût cumulé (USD) — tarif {country} ({price_usd_per_kwh:.4f} $/kWh)")
+    st.subheader(f"Cumulative cost (USD) — {country} rate ({price_usd_per_kwh:.4f} $/kWh)")
     st.line_chart(df.set_index("elapsed_min")["cost_usd_cumulative"])
 
 

@@ -11,7 +11,7 @@ CSV_FIELDS = ["timestamp", "elapsed_s", "power_w", "energy_wh_cumulative"]
 def track(log_path: Path, interval_s: float = 1.0) -> None:
     nvmlInit()
     handle = nvmlDeviceGetHandleByIndex(0)
-    energie_wh = 0.0
+    energy_wh = 0.0
     t0 = time.time()
 
     is_new_file = not log_path.exists()
@@ -25,17 +25,17 @@ def track(log_path: Path, interval_s: float = 1.0) -> None:
         while True:
             p = nvmlDeviceGetPowerUsage(handle) / 1000  # mW -> W
             time.sleep(interval_s)
-            energie_wh += p * (interval_s / 3600)
-            duree = time.time() - t0
+            energy_wh += p * (interval_s / 3600)
+            elapsed = time.time() - t0
 
-            writer.writerow([time.time(), f"{duree:.3f}", f"{p:.3f}", f"{energie_wh:.6f}"])
+            writer.writerow([time.time(), f"{elapsed:.3f}", f"{p:.3f}", f"{energy_wh:.6f}"])
             log_file.flush()
 
-            print(f"\r{p:6.1f} W  |  {energie_wh:8.4f} Wh  |  "
-                  f"moy {energie_wh * 3600 / duree:6.1f} W  |  "
-                  f"{duree / 60:5.1f} min", end="")
+            print(f"\r{p:6.1f} W  |  {energy_wh:8.4f} Wh  |  "
+                  f"avg {energy_wh * 3600 / elapsed:6.1f} W  |  "
+                  f"{elapsed / 60:5.1f} min", end="")
     except KeyboardInterrupt:
-        print(f"\nTotal : {energie_wh / 1000:.4f} kWh")
+        print(f"\nTotal: {energy_wh / 1000:.4f} kWh")
     finally:
         log_file.close()
 
