@@ -1,13 +1,16 @@
 import argparse
-import csv
 import time
 from pathlib import Path
 
-from pynvml import nvmlDeviceGetHandleByIndex, nvmlDeviceGetPowerUsage, nvmlInit
+from pynvml import (
+    nvmlDeviceGetHandleByIndex,
+    nvmlDeviceGetPowerUsage,
+    nvmlDeviceGetUtilizationRates,
+    nvmlInit,
+)
 
+from csv_log import append_row
 from log_paths import new_log_path
-
-CSV_FIELDS = ["timestamp", "elapsed_s", "power_w", "energy_wh_cumulative"]
 
 
 def track(log_path: Path, interval_s: float = 1.0) -> None:
@@ -16,33 +19,30 @@ def track(log_path: Path, interval_s: float = 1.0) -> None:
     energy_wh = 0.0
     t0 = time.time()
 
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    is_new_file = not log_path.exists()
-    log_file = log_path.open("a", newline="", encoding="utf-8")
-    writer = csv.writer(log_file)
-    if is_new_file:
-        writer.writerow(CSV_FIELDS)
-        log_file.flush()
-
     print(f"Logging to {log_path}")
 
     try:
         while True:
             p = nvmlDeviceGetPowerUsage(handle) / 1000  # mW -> W
+            util = nvmlDeviceGetUtilizationRates(handle).gpu  # %
             time.sleep(interval_s)
             energy_wh += p * (interval_s / 3600)
             elapsed = time.time() - t0
 
-            writer.writerow([time.time(), f"{elapsed:.3f}", f"{p:.3f}", f"{energy_wh:.6f}"])
-            log_file.flush()
+            append_row(log_path, {
+                "row_type": "sample",
+                "timestamp": f"{time.time():.3f}",
+                "elapsed_s": f"{elapsed:.3f}",
+                "power_w": f"{p:.3f}",
+                "gpu_util_pct": util,
+                "energy_wh_cumulative": f"{energy_wh:.6f}",
+            })
 
-            print(f"\r{p:6.1f} W  |  {energy_wh:8.4f} Wh  |  "
+            print(f"\r{p:6.1f} W  |  {util:3.0f}%  |  {energy_wh:8.4f} Wh  |  "
                   f"avg {energy_wh * 3600 / elapsed:6.1f} W  |  "
                   f"{elapsed / 60:5.1f} min", end="")
     except KeyboardInterrupt:
         print(f"\nTotal: {energy_wh / 1000:.4f} kWh")
-    finally:
-        log_file.close()
 
 
 def main() -> None:
