@@ -10,16 +10,24 @@ from pynvml import (
 )
 
 from csv_log import append_row
+from gpu_samples import HiresRecorder, NvmlSampler, hires_path_for
 from log_paths import new_log_path
 
 
-def track(log_path: Path, interval_s: float = 1.0) -> None:
+def track(log_path: Path, interval_s: float = 1.0, hires: bool = True) -> None:
     nvmlInit()
     handle = nvmlDeviceGetHandleByIndex(0)
     energy_wh = 0.0
     t0 = time.time()
 
     print(f"Logging to {log_path}")
+    recorder = None
+    if hires:
+        # Every ~20 ms driver power sample, for sub-second energy (see gpu_samples.py).
+        hires_path = hires_path_for(log_path)
+        recorder = HiresRecorder(NvmlSampler(handle), hires_path)
+        recorder.start()
+        print(f"Hi-res samples: {hires_path}")
 
     try:
         while True:
@@ -43,6 +51,9 @@ def track(log_path: Path, interval_s: float = 1.0) -> None:
                   f"{elapsed / 60:5.1f} min", end="")
     except KeyboardInterrupt:
         print(f"\nTotal: {energy_wh / 1000:.4f} kWh")
+    finally:
+        if recorder is not None:
+            recorder.stop()
 
 
 def main() -> None:
@@ -61,9 +72,16 @@ def main() -> None:
         default=1.0,
         help="Seconds between two readings (default: 1.0).",
     )
+    parser.add_argument(
+        "--hires",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Also record every driver power sample (~20 ms) under logs/hires/ "
+             "(default: on; about 5 MB per hour). --no-hires disables it.",
+    )
     args = parser.parse_args()
     log_path = args.log_file if args.log_file is not None else new_log_path()
-    track(log_path, args.interval)
+    track(log_path, args.interval, args.hires)
 
 
 if __name__ == "__main__":

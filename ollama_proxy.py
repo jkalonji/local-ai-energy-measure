@@ -1,18 +1,28 @@
 """Transparent logging reverse proxy in front of Ollama.
 
-Forwards every request unchanged to a real Ollama server, but for
-/api/generate and /api/chat it also extracts token counts and
-generation speed (TPS) from the response — streamed or not — and
-appends an "ollama_call" row to the currently active tracker log (see
-log_paths.py / csv_log.py), timestamped with the call's start/end so
-the dashboard can attribute GPU energy and load to it precisely.
+Forwards every request unchanged to a real Ollama server, but for the
+generation endpoints it also extracts token counts from the response -
+streamed or not - and appends an "ollama_call" row to the currently
+active tracker log (see log_paths.py / csv_log.py), timestamped with the
+call's start/end so GPU energy can be attributed to it precisely.
+
+Logged endpoints:
+- Ollama native API: /api/generate, /api/chat. Token counts and speed
+  (tok/s) come from Ollama's own final object.
+- OpenAI-compatible API: /v1/chat/completions, /v1/completions. Token
+  counts come from the `usage` field, which a streaming client only gets
+  if it asks for it (`stream_options.include_usage`). Requests are never
+  modified, so without it the completion count is estimated from the
+  number of streamed content chunks (`tokens_source` = "chunk_count",
+  prompt tokens unknown). No tok/s is logged for these: the API reports
+  no generation duration.
 
 Point your Ollama client at this proxy instead of talking to Ollama
 directly, e.g.:
     OLLAMA_HOST=http://localhost:11435 ollama run llama3.1
-or set the base URL of whatever tool you use (Open WebUI, a script,
-etc.) to http://localhost:11435 — everything else (tags, ps, pulling
-models...) is passed through untouched.
+or set the base URL of whatever tool you use (Open WebUI, an agent
+harness using http://localhost:11435/v1, a script, etc.) - everything
+else (tags, ps, pulling models...) is passed through untouched.
 
 Run with:
     python ollama_proxy.py
@@ -24,14 +34,89 @@ import argparse
 import json
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import Optional
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
 from csv_log import append_row
 from log_paths import latest_log_file, new_log_path
 
-STAT_PATHS = {"/api/generate", "/api/chat"}
+NATIVE_PATHS = {"/api/generate", "/api/chat"}
+OPENAI_PATHS = {"/v1/chat/completions", "/v1/completions"}
+STAT_PATHS = NATIVE_PATHS | OPENAI_PATHS
 HOP_BY_HOP_HEADERS = {"connection", "keep-alive", "transfer-encoding", "content-length", "content-encoding"}
+
+
+class CallStats:
+    """Accumulates token stats from the lines of one upstream response.
+
+    Understands Ollama's native JSON lines and OpenAI-style responses: one
+    JSON object, or Server-Sent Events ("data: {...}" lines) when streamed.
+    """
+
+    def __init__(self) -> None:
+        self.model = ""
+        self._native_final: Optional[dict] = None
+        self._usage: Optional[dict] = None
+        self._content_chunks = 0
+
+    def feed(self, line: bytes) -> None:
+        text = line.strip()
+        if text.startswith(b"data:"):
+            text = text[len(b"data:"):].strip()
+        if not text or text == b"[DONE]":
+            return
+        try:
+            obj = json.loads(text)
+        except (json.JSONDecodeError, ValueError):
+            return
+        if not isinstance(obj, dict):
+            return
+        self.model = obj.get("model") or self.model
+        if obj.get("done"):
+            self._native_final = obj
+            return
+        if obj.get("usage"):
+            self._usage = obj["usage"]
+        for choice in obj.get("choices") or []:
+            delta = choice.get("delta") or {}
+            if (choice.get("text") or delta.get("content") or delta.get("reasoning")
+                    or delta.get("reasoning_content") or delta.get("tool_calls")):
+                self._content_chunks += 1
+
+    def summary(self) -> Optional[dict]:
+        """Token counts of the call, or None if the response had nothing to count.
+
+        Keys: model, prompt_tokens (None if unknown), completion_tokens,
+        eval_duration_s (None unless native API), tokens_source.
+        """
+        if self._native_final is not None:
+            final = self._native_final
+            return {
+                "model": self.model,
+                "prompt_tokens": final.get("prompt_eval_count", 0) or 0,
+                "completion_tokens": final.get("eval_count", 0) or 0,
+                "eval_duration_s": (final.get("eval_duration", 0) or 0) / 1e9,
+                "tokens_source": "usage",
+            }
+        if self._usage is not None:
+            return {
+                "model": self.model,
+                "prompt_tokens": self._usage.get("prompt_tokens", 0) or 0,
+                "completion_tokens": self._usage.get("completion_tokens", 0) or 0,
+                "eval_duration_s": None,
+                "tokens_source": "usage",
+            }
+        if self._content_chunks:
+            return {
+                "model": self.model,
+                "prompt_tokens": None,
+                "completion_tokens": self._content_chunks,
+                "eval_duration_s": None,
+                "tokens_source": "chunk_count",
+            }
+        return None
 
 
 class ProxyHandler(BaseHTTPRequestHandler):
@@ -47,7 +132,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
         self._forward(stat=False)
 
     def do_POST(self) -> None:
-        self._forward(stat=self.path in STAT_PATHS)
+        self._forward(stat=urlsplit(self.path).path in STAT_PATHS)
 
     def do_PUT(self) -> None:
         self._forward(stat=False)
@@ -92,28 +177,23 @@ class ProxyHandler(BaseHTTPRequestHandler):
                 self.send_header(key, value)
         self.end_headers()
 
-        last_stats = None
+        stats = CallStats() if stat else None
         for line in upstream:
             self.wfile.write(line)
             self.wfile.flush()
-            if stat:
-                try:
-                    obj = json.loads(line)
-                except (json.JSONDecodeError, ValueError):
-                    continue
-                if obj.get("done"):
-                    last_stats = obj
+            if stats is not None:
+                stats.feed(line)
 
         call_end = time.time()
-        if stat and last_stats:
-            self._log_call(call_start, call_end, last_stats)
+        summary = stats.summary() if stats is not None else None
+        if summary is not None:
+            self._log_call(call_start, call_end, urlsplit(self.path).path, summary)
 
-    def _log_call(self, start_ts: float, end_ts: float, stats: dict) -> None:
-        eval_count = stats.get("eval_count", 0) or 0
-        eval_duration_s = (stats.get("eval_duration", 0) or 0) / 1e9
-        prompt_tokens = stats.get("prompt_eval_count", 0) or 0
-        tps = eval_count / eval_duration_s if eval_duration_s > 0 else 0.0
-        model = stats.get("model", "")
+    def _log_call(self, start_ts: float, end_ts: float, endpoint: str, summary: dict) -> None:
+        completion = summary["completion_tokens"]
+        prompt = summary["prompt_tokens"]
+        eval_duration_s = summary["eval_duration_s"]
+        tps = f"{completion / eval_duration_s:.2f}" if eval_duration_s else ""
 
         log_path = latest_log_file() or new_log_path()
         append_row(log_path, {
@@ -121,13 +201,17 @@ class ProxyHandler(BaseHTTPRequestHandler):
             "timestamp": f"{end_ts:.3f}",
             "call_start_ts": f"{start_ts:.3f}",
             "call_end_ts": f"{end_ts:.3f}",
-            "model": model,
-            "prompt_tokens": prompt_tokens,
-            "completion_tokens": eval_count,
-            "total_tokens": prompt_tokens + eval_count,
-            "tps": f"{tps:.2f}",
+            "model": summary["model"],
+            "prompt_tokens": "" if prompt is None else prompt,
+            "completion_tokens": completion,
+            "total_tokens": "" if prompt is None else prompt + completion,
+            "tps": tps,
+            "endpoint": endpoint,
+            "tokens_source": summary["tokens_source"],
         })
-        print(f"[ollama_proxy] {model}: {eval_count} tokens @ {tps:.1f} tok/s -> {log_path}")
+        speed = f" @ {tps} tok/s" if tps else ""
+        print(f"[ollama_proxy] {summary['model']}: {completion} tokens ({summary['tokens_source']}){speed} "
+              f"via {endpoint} -> {log_path}")
 
 
 def main() -> None:

@@ -27,7 +27,7 @@ import pandas as pd
 import streamlit as st
 
 from attribution import attribute_calls
-from csv_log import CSV_FIELDS
+from csv_log import CSV_FIELDS, parse_row
 from human_analogy import format_rowing_equivalent
 from log_paths import LOGS_DIR, latest_log_file, list_log_files
 from pricing import get_prices_usd_per_kwh
@@ -72,30 +72,6 @@ NUMERIC_FIELDS = [
     "call_start_ts", "call_end_ts", "prompt_tokens", "completion_tokens", "total_tokens", "tps",
 ]
 
-# Old (pre row_type/gpu_util_pct/Ollama) log schema, still written by any
-# tracker process started before this schema existed.
-OLD_SCHEMA_FIELDS = ["timestamp", "elapsed_s", "power_w", "energy_wh_cumulative"]
-
-
-def _parse_row(fields: list[str]) -> Optional[dict]:
-    """Map one raw CSV row to a CSV_FIELDS dict, by its actual width.
-
-    A single file can mix old-schema and new-schema rows (e.g. a
-    tracker process started before an update keeps writing old rows,
-    while ollama_proxy.py appends new-schema rows to the same file) -
-    each row is parsed independently rather than trusting the file's
-    single header line for every row.
-    """
-    if fields in (CSV_FIELDS, OLD_SCHEMA_FIELDS):
-        return None  # header line
-    if len(fields) == len(CSV_FIELDS):
-        return dict(zip(CSV_FIELDS, fields))
-    if len(fields) == len(OLD_SCHEMA_FIELDS):
-        row = dict(zip(OLD_SCHEMA_FIELDS, fields))
-        row["row_type"] = "sample"
-        return row
-    return None  # malformed/unrecognized row width
-
 
 def read_log(path: Path) -> pd.DataFrame:
     """Read a log file and normalize it to the current CSV_FIELDS schema."""
@@ -107,7 +83,7 @@ def read_log(path: Path) -> pd.DataFrame:
         for fields in csv.reader(f):
             if not fields:
                 continue
-            row = _parse_row(fields)
+            row = parse_row(fields)
             if row is not None:
                 rows.append(row)
 
