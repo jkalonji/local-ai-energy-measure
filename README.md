@@ -154,8 +154,15 @@ and a model loaded with another context is reloaded at the server default. That 
 can be a model's full window: `qwen3:4b` tries to allocate ~150 GB of KV cache and fails.
 So the value is imposed on the server, and checked before a run:
 
+```bat
+:: cmd (quit the Ollama app first, or port 11434 is taken)
+set OLLAMA_CONTEXT_LENGTH=32768 & ollama serve
+:: or once, permanently (new processes only: restart the Ollama app afterwards)
+setx OLLAMA_CONTEXT_LENGTH 32768
+```
+
 ```powershell
-$env:OLLAMA_CONTEXT_LENGTH = 32768; ollama serve     # quit the Ollama app first
+$env:OLLAMA_CONTEXT_LENGTH = 32768; ollama serve     # PowerShell
 ```
 
 ```python

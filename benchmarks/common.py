@@ -126,8 +126,9 @@ def require_context(model: str, num_ctx: int = HARNESS_NUM_CTX, ollama_url: str 
 
 _CONTEXT_FIX = (
     "Harnesses cannot set num_ctx per request. Quit Ollama, then start it with the variable set:\n"
+    "  cmd:        set OLLAMA_CONTEXT_LENGTH={num_ctx} & ollama serve\n"
     "  PowerShell: $env:OLLAMA_CONTEXT_LENGTH = {num_ctx}; ollama serve\n"
-    "  (or set it as a user environment variable and restart the Ollama app)"
+    "  (or run `setx OLLAMA_CONTEXT_LENGTH {num_ctx}` once and restart the Ollama app)"
 )
 
 
