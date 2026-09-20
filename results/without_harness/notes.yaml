@@ -1,0 +1,41 @@
+# Hand-written commentary rendered into benchmark_1M_tokens.md by
+# benchmarks/without_harness/benchmark_1M_tokens.py. Kept out of the script so the
+# runner stays generic. Update it after a run when the numbers change.
+# suspect_notes: per-model warning shown in the Notes column.
+suspect_notes:
+  qwen2.5:0.5b: 'PEU D''ECHANTILLONS: histoire tres courte a 2 essais consecutifs -> puissance moyenne dominee par la rampe de demarrage GPU, a prendre avec prudence'
+  qwen2.5vl:7b: 'PEU D''ECHANTILLONS + DETERMINISTE (temperature=0.0001 dans son Modelfile): produit exactement la meme reponse courte a chaque essai, un retest ne peut pas aider'
+anomalies_section: |-
+  ## A prendre avec prudence
+
+  - **smollm2:135m et mistral-nemo:12b : resolus au 2e essai.** Le 1er essai
+    avait produit une histoire trop courte (mesure fragile, peu
+    d'echantillons). Un 2eme essai avec le meme prompt/parametres a suffi -
+    simple variabilite d'echantillonnage (temperature > 0), pas un probleme
+    structurel. Les valeurs du tableau ci-dessus sont celles du 2e essai
+    (fiable : 40 a 319 echantillons de puissance).
+  - **qwen2.5:0.5b : reste une mesure fragile apres 2 essais.** Histoire tres
+    courte les deux fois (99 puis 111 tokens, ~0.2s, 5 echantillons de
+    puissance a chaque fois) - semble etre un vrai comportement du modele
+    (s'arrete vite) plutot qu'un coup de malheur ponctuel, mais la puissance
+    moyenne mesuree reste dominee par la rampe de demarrage GPU. A prendre
+    avec prudence.
+  - **qwen2.5vl:7b : reessai inutile, modele deterministe.** Son Modelfile
+    fixe `temperature=0.0001` - il produit litteralement la meme reponse de
+    151 tokens a chaque appel avec le meme prompt. Relancer avec le meme
+    prompt ne peut donc jamais ameliorer la mesure (8 echantillons de
+    puissance, moyenne peu fiable) ; il faudrait changer le prompt pour
+    obtenir une reponse plus longue, ce qui casserait la comparabilite avec
+    les autres modeles - laisse tel quel.
+observations_section: |-
+  ## Observations
+
+  - **MoE vs dense : le total de parametres ne dit pas tout.** `qwen3:30b-a3b`
+    (30B de parametres au total, ~3B actifs par token) tourne a seulement
+    ~72 W de moyenne - moins que la plupart des modeles denses 7-9B testes
+    (llama3.1:8b 153 W, qwen3.5:9b 158 W, deepseek-r1:8b 161 W) et proche de
+    modeles denses bien plus petits. Ca confirme l'hypothese de depart : le
+    cout d'un MoE suit son nombre de parametres *actifs*, pas son poids total
+    sur le disque. Sur ce GPU, qwen3:30b-a3b finit moins cher au 1M tokens
+    (0,110 $) que des modeles denses 4 a 5 fois plus petits en parametres
+    totaux (llama3.1:8b 0,162 $, qwen3.5:9b 0,194 $).

@@ -7,3 +7,6 @@ venv/
 *.csv
 *.lock
 *_test.log
+
+# Benchmark results are versioned even though runtime logs (*.csv) are not
+!results/**/*.csv

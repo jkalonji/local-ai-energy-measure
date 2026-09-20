@@ -22,7 +22,7 @@ pip install -r requirements.txt
 
 ## Usage
 
-Three independent pieces. Run what you need.
+Three independent pieces, plus benchmark scripts. Run what you need.
 
 ### 1. GPU power/energy tracker
 
@@ -64,6 +64,43 @@ pick one manually from the sidebar). Shows power/utilization curves,
 cumulative cost in a country of your choice (France, USA, China, DR Congo,
 Brazil — toggle in the sidebar), and, if the proxy was used, per-call
 token/TPS/energy stats.
+
+### 4. Benchmarks
+
+Scripts under `benchmarks/` measure energy per model. They need the tracker and the proxy
+running (see above).
+
+```
+benchmarks/
+  models.yaml              # model list + named sets, shared by every benchmark
+  common.py                # shared helpers (power window, warm-up, Ollama capabilities...)
+  without_harness/         # direct /api/generate calls, no agent loop
+results/
+  without_harness/         # CSV/Markdown/plots + notes.yaml (hand-written commentary)
+```
+
+**Without a harness** — cost of generating 1M tokens, per model:
+
+```bash
+python benchmarks/without_harness/benchmark_1M_tokens.py --set round_3_retry
+python benchmarks/without_harness/benchmark_1M_tokens.py --models gemma3:1b,qwen3:4b
+python benchmarks/without_harness/benchmark_1M_tokens.py --all           # slow: every model
+python benchmarks/without_harness/benchmark_1M_tokens.py --report-only   # rebuild .md/.csv, no GPU
+```
+
+A run re-measures the selected models (their previous row is replaced) and merges the rest
+into `results/without_harness/benchmark_1M_tokens.{csv,md}`. Nothing runs by default: pick
+a selection explicitly. Model lists live in `benchmarks/models.yaml`; commentary rendered
+into the report lives in `results/without_harness/notes.yaml`.
+
+Tool/thinking/vision support of a model is read from Ollama, not stored in the repo:
+
+```python
+from benchmarks import common
+common.model_capabilities("qwen3:4b")   # ['completion', 'tools', 'thinking']
+```
+
+Unit tests: `python -m unittest discover -s tests -t .`
 
 ### Windows: one-click launcher
 

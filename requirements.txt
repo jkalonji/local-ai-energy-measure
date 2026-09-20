@@ -2,3 +2,4 @@ pynvml
 requests
 streamlit
 pandas>=2.2.2
+pyyaml

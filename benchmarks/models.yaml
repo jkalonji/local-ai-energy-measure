@@ -1,0 +1,60 @@
+# Models shared by every benchmark (without_harness today, with_harnesses next),
+# so all result tables and the future compatibility matrix use the same model axis.
+#
+# models: every model that can be benchmarked, in the order of the first round that
+#         used it. `kind` is optional and only set where it is known for certain.
+#         Tool/thinking/vision support is NOT recorded here: read it from Ollama with
+#         benchmarks/common.py:model_capabilities so it cannot go stale.
+# sets:   named subsets selectable with `--set NAME` on the benchmark scripts.
+
+models:
+  # round 1: smallest to largest, to free VRAM progressively
+  - name: gemma3:1b
+  - name: granite3.1-dense:2b
+  - name: qwen2.5:3b
+  - name: qwen3:4b
+  - name: gemma3:4b
+  - name: llama3.1:8b
+  - name: granite3.1-dense:8b
+  - name: minicpm-v:latest
+    kind: vision
+  - name: qwen2.5vl:7b
+    kind: vision
+  - name: qwen3.5:9b
+  - name: gemma4:latest
+  # round 2: other price typologies (near-free floor, high-end dense, reasoner, MoE)
+  - name: smollm2:135m
+  - name: qwen2.5:0.5b
+  - name: mistral-nemo:12b
+  - name: deepseek-r1:8b
+    kind: reasoning
+  - name: phi4:14b
+  - name: qwen3:30b-a3b
+    kind: moe
+
+sets:
+  round_1:
+    - gemma3:1b
+    - granite3.1-dense:2b
+    - qwen2.5:3b
+    - qwen3:4b
+    - gemma3:4b
+    - llama3.1:8b
+    - granite3.1-dense:8b
+    - minicpm-v:latest
+    - qwen2.5vl:7b
+    - qwen3.5:9b
+    - gemma4:latest
+  round_2:
+    - smollm2:135m
+    - qwen2.5:0.5b
+    - mistral-nemo:12b
+    - deepseek-r1:8b
+    - phi4:14b
+    - qwen3:30b-a3b
+  # Control run with the same num_ctx for every model (see the without_harness README section)
+  round_3_retry:
+    - smollm2:135m
+    - qwen2.5:0.5b
+    - mistral-nemo:12b
+    - qwen2.5vl:7b
