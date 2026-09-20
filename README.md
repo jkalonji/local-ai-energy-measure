@@ -146,6 +146,25 @@ from benchmarks import common
 common.model_capabilities("qwen3:4b")   # ['completion', 'tools', 'thinking']
 ```
 
+**Context window.** `without_harness` forces `num_ctx=8192` on every call. Runs *with* a
+harness use a fixed **32768** (`common.HARNESS_NUM_CTX`) so results are comparable across
+harnesses and long agent prompts are not silently truncated (Ollama drops what exceeds
+`num_ctx`). Harnesses call the OpenAI-compatible `/v1` API, which cannot carry `num_ctx`,
+and a model loaded with another context is reloaded at the server default. That default
+can be a model's full window: `qwen3:4b` tries to allocate ~150 GB of KV cache and fails.
+So the value is imposed on the server, and checked before a run:
+
+```powershell
+$env:OLLAMA_CONTEXT_LENGTH = 32768; ollama serve     # quit the Ollama app first
+```
+
+```python
+common.require_context("qwen3:4b")   # raises with the fix if the model does not run at 32768
+```
+
+Explicit `num_ctx` on native `/api/*` calls (the `without_harness` benchmark) still wins over
+the server setting, so the two sections can share one Ollama.
+
 Unit tests: `python -m unittest discover -s tests -t .`
 
 ### Windows: one-click launcher

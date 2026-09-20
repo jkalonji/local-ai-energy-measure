@@ -94,5 +94,42 @@ class ModelCapabilitiesTest(unittest.TestCase):
             self.assertEqual(common.model_capabilities("m"), [])
 
 
+class RequireContextTest(unittest.TestCase):
+    def _post(self, ok=True, status=200, text=""):
+        return mock.Mock(ok=ok, status_code=status, text=text)
+
+    def _get(self, models):
+        response = mock.Mock()
+        response.json.return_value = {"models": models}
+        return response
+
+    def _check(self, post, models, num_ctx=common.HARNESS_NUM_CTX):
+        with mock.patch.object(common.requests, "post", return_value=post) as p, \
+                mock.patch.object(common.requests, "get", return_value=self._get(models)):
+            common.require_context("m:1b", num_ctx, "http://x")
+        return p
+
+    def test_harness_context_is_32k(self):
+        self.assertEqual(common.HARNESS_NUM_CTX, 32768)
+
+    def test_matching_context_passes_and_request_carries_no_num_ctx(self):
+        post = self._check(self._post(), [{"name": "m:1b", "context_length": 32768}])
+        self.assertEqual(post.call_args.args[0], "http://x/v1/chat/completions")
+        self.assertNotIn("options", post.call_args.kwargs["json"])
+        self.assertNotIn("num_ctx", post.call_args.kwargs["json"])
+
+    def test_other_context_is_rejected_with_the_fix(self):
+        with self.assertRaisesRegex(RuntimeError, r"(?s)context 4096, expected 32768.*OLLAMA_CONTEXT_LENGTH"):
+            self._check(self._post(), [{"name": "m:1b", "context_length": 4096}])
+
+    def test_model_missing_from_ps_is_rejected(self):
+        with self.assertRaisesRegex(RuntimeError, "context None"):
+            self._check(self._post(), [{"name": "other", "context_length": 32768}])
+
+    def test_load_failure_is_reported_with_the_fix(self):
+        with self.assertRaisesRegex(RuntimeError, r"(?s)HTTP 500.*failed to allocate.*OLLAMA_CONTEXT_LENGTH"):
+            self._check(self._post(ok=False, status=500, text="failed to allocate buffer"), [])
+
+
 if __name__ == "__main__":
     unittest.main()
