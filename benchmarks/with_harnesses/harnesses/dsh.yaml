@@ -1,0 +1,37 @@
+# DeepSeek Harness (dsh), headless profile: answers one task and exits.
+#
+# Each run gets its own empty DSH_HOME, so the user's ~/.dsh (settings, sessions, memory) is
+# never read or modified and no run can influence the next. The generated settings.yaml points
+# dsh at the logging proxy instead of Ollama and declares the model under test.
+description: DeepSeek Harness (dsh) headless profile, OpenAI-compatible /v1 API
+dir: ../Deepseek-harness
+timeout_s: 900
+command:
+  - node
+  - "{harness_dir}/apps/cli/lib/bin.js"
+  - --profile
+  - headless
+  - "{task}"
+env:
+  DSH_HOME: "{home}"
+  OLLAMA_API_KEY: ollama          # Ollama ignores the key, dsh insists on a non-empty one
+files:
+  settings.yaml: |
+    llm-pi-ai:
+      providers:
+        ollama:
+          displayName: Ollama (local)
+          apiKeyEnv: OLLAMA_API_KEY
+          api: openai-completions
+          baseURL: {v1_url}
+          defaultContextWindow: {num_ctx}
+          compat:
+            supportsDeveloperRole: false
+          models:
+            - id: {model}
+              name: {model}
+              contextWindow: {num_ctx}
+              input: [ text ]
+    agent-default-model:
+      provider: ollama
+      model: {model}

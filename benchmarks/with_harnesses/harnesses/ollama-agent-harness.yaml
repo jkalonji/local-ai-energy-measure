@@ -1,0 +1,24 @@
+# Ollama Agent Harness, headless single-prompt mode (-p).
+#
+# It talks to Ollama's native API (/api/chat), through the logging proxy (--host). Its data
+# directory is the per-run workspace (HARNESS_PROJECT_DIR), so no memory or learning state is
+# shared between runs. --mode dontAsk: nobody is there to approve tool calls. --max-turns caps a
+# model that loops, like the harness's own smoke test does.
+description: Ollama Agent Harness headless mode, Ollama native API
+dir: ../ollama-agent-harness
+timeout_s: 900
+command:
+  - node
+  - "{harness_dir}/dist/cli/index.js"
+  - -p
+  - "{task}"
+  - --model
+  - "{model}"
+  - --host
+  - "{proxy_url}"
+  - --mode
+  - dontAsk
+  - --max-turns
+  - "25"
+env:
+  HARNESS_PROJECT_DIR: "{workspace}"

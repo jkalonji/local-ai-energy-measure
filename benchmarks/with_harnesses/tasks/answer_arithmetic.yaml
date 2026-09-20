@@ -1,0 +1,5 @@
+description: Answer a question without touching any file (no tool needed)
+needs_tools: false
+prompt: What is 17 multiplied by 23? Reply with just the number.
+checks:
+  - stdout_contains: "391"

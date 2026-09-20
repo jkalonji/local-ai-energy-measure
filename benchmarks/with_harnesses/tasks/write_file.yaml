@@ -1,0 +1,8 @@
+description: Create one file with an exact content (one tool call)
+needs_tools: true
+prompt: >
+  Create a file named hello.txt in the current directory containing exactly this text and
+  nothing else: Bonjour le monde
+checks:
+  - file_equals: hello.txt
+    content: Bonjour le monde

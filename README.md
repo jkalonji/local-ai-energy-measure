@@ -121,8 +121,10 @@ benchmarks/
   models.yaml              # model list + named sets, shared by every benchmark
   common.py                # shared helpers (power window, warm-up, Ollama capabilities...)
   without_harness/         # direct /api/generate calls, no agent loop
+  with_harnesses/          # the same models driven by agent harnesses (see below)
 results/
   without_harness/         # CSV/Markdown/plots + notes.yaml (hand-written commentary)
+  with_harnesses/          # runs.csv (history), matrix.csv, compatibility_matrix.md
 ```
 
 **Without a harness** — cost of generating 1M tokens, per model:
@@ -145,6 +147,36 @@ Tool/thinking/vision support of a model is read from Ollama, not stored in the r
 from benchmarks import common
 common.model_capabilities("qwen3:4b")   # ['completion', 'tools', 'thinking']
 ```
+
+**With a harness** — does the model work inside an agent harness, and what does it cost:
+
+```bash
+python benchmarks/with_harnesses/run_harness_benchmark.py --harness dsh --models qwen3:4b --dry-run   # plan only
+python benchmarks/with_harnesses/run_harness_benchmark.py --harness dsh,ollama-agent-harness --set round_1
+python benchmarks/with_harnesses/run_harness_benchmark.py --harness dsh --models qwen3:4b --tasks write_file --repeat 3
+python benchmarks/with_harnesses/run_harness_benchmark.py --report-only    # rebuild the matrix from runs.csv
+```
+
+Needs the tracker, the proxy and Ollama with the 32k context (see below). Each run starts the
+harness headless on one task, in a fresh workspace, with its requests going through the proxy,
+then reads the ~20 ms GPU samples of the run window: the energy of the whole run, split between
+time inside model requests and time between them (harness start-up, tools). The task passes or
+fails on an objective check (a file's content, a test suite, the answer), not on the model's own
+say-so. Outputs:
+
+- `results/with_harnesses/runs.csv`: one row per run (status, time, requests, tokens, energy).
+  Append-only; for each (harness, model, task) the matrix uses its most recent batch.
+- `results/with_harnesses/compatibility_matrix.md` / `matrix.csv`: model x harness, `passed/runs · median Wh`.
+- `logs/harness_runs/`: full stdout/stderr of every run (not versioned), for understanding failures.
+
+Harnesses are `benchmarks/with_harnesses/harnesses/<name>.yaml` (command line, environment,
+generated files; `dir` is where the harness is installed, relative to this repo), tasks are
+`tasks/<id>.yaml`. To test another harness, add a yaml: it only needs a headless mode that takes
+the prompt on the command line and an option to point it at `{proxy_url}` (native API) or
+`{v1_url}` (OpenAI-compatible). `dsh` runs with an empty `DSH_HOME` per run, so your `~/.dsh` is
+never touched. Models Ollama does not report as supporting tools skip the tool tasks
+(`--include-unsupported` forces them). A run is flagged when no request went through the proxy or
+when the harness changed the context window itself (`ollama-agent-harness` may).
 
 **Context window.** `without_harness` forces `num_ctx=8192` on every call. Runs *with* a
 harness use a fixed **32768** (`common.HARNESS_NUM_CTX`) so results are comparable across

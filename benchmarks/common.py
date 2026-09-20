@@ -27,6 +27,14 @@ PROXY_URL = "http://localhost:11435"
 HARNESS_NUM_CTX = 32768
 
 
+class ModelLoadError(RuntimeError):
+    """Ollama could not load one model (typically out of memory)."""
+
+
+class ContextMismatch(RuntimeError):
+    """The Ollama server does not give harness requests the expected context window."""
+
+
 def load_models_file(path: Path = MODELS_FILE) -> Dict:
     """Parse models.yaml and check that every set only names declared models."""
     with path.open(encoding="utf-8") as f:
@@ -114,14 +122,14 @@ def require_context(model: str, num_ctx: int = HARNESS_NUM_CTX, ollama_url: str 
         timeout=300,
     )
     if not reply.ok:
-        raise RuntimeError(
+        raise ModelLoadError(
             f"{model} could not be loaded by a /v1 request without num_ctx (HTTP {reply.status_code}): "
             f"{reply.text[:300]}\n{_CONTEXT_FIX.format(num_ctx=num_ctx)}"
         )
     loaded = requests.get(f"{ollama_url}/api/ps", timeout=30).json().get("models", [])
     actual = next((m.get("context_length") for m in loaded if model in (m.get("name"), m.get("model"))), None)
     if actual != num_ctx:
-        raise RuntimeError(f"{model} runs with context {actual}, expected {num_ctx}.\n{_CONTEXT_FIX.format(num_ctx=num_ctx)}")
+        raise ContextMismatch(f"{model} runs with context {actual}, expected {num_ctx}.\n{_CONTEXT_FIX.format(num_ctx=num_ctx)}")
 
 
 _CONTEXT_FIX = (
