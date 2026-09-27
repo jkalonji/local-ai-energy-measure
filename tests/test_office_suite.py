@@ -278,6 +278,23 @@ class LoopLimitsTest(unittest.TestCase):
         self.assertEqual((result.stop_reason, watcher.calls), ("stalled", 2))
         self.assertLess(elapsed, 30)
 
+    def test_a_long_generation_keeps_the_gpu_busy_and_is_not_a_stall(self):
+        import os
+        busy = r"""
+import os, time
+from pathlib import Path
+from csv_log import append_row
+for _ in range(16):  # 4 s of generation, no request finished, well past idle_s
+    append_row(Path(os.environ["TEST_LOG"]), {"row_type": "sample", "timestamp": time.time(), "gpu_util_pct": 99})
+    time.sleep(0.25)
+"""
+        env = {**os.environ, "TEST_LOG": str(self.log), "PYTHONPATH": str(definitions.REPO_ROOT)}
+        watcher = execute.CallWatcher(self.log, time.time())
+        task = Task(id="t", description="d", prompt="p", checks=[], idle_s=2)
+        result = execute.run_process([sys.executable, "-c", busy], Path(self.tmp.name), env, 60,
+                                     stop=execute.watch_run(task, watcher), poll_s=0.2)
+        self.assertEqual((result.stop_reason, result.exit_code, watcher.calls), ("", 0, 0))
+
     def test_fixtures_are_copied_into_the_workspace(self):
         seen = Path(self.tmp.name) / "seen.txt"
         harness = Harness(name="fake", description="d", dir=Path(self.tmp.name), timeout_s=30, command=[

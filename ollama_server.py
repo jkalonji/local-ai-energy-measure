@@ -6,8 +6,11 @@ to its server (262144 on this machine), which beats OLLAMA_CONTEXT_LENGTH, and q
 for ~150 GB of KV cache and fails to load.
 
 So the benchmarks do not use the app's server. They use a second `ollama serve` of their own, on
-BENCH_URL, started with OLLAMA_CONTEXT_LENGTH=NUM_CTX. It reads the same model store as the app,
-which keeps running untouched for everyday use. `ensure_server` starts it when nothing answers
+BENCH_URL, started with OLLAMA_CONTEXT_LENGTH=NUM_CTX and OLLAMA_NUM_PARALLEL=1: an agent
+sends one request at a time, and Ollama's default of 4 parallel slots would reserve 4x the KV
+cache (131072 tokens for qwen3:4b, 23 GB), pushing layers onto the CPU, which the GPU tracker
+does not measure. It reads the same model store as the app, which keeps running untouched for
+everyday use. `ensure_server` starts it when nothing answers
 there, detached, so it outlives the process that started it and later runs reuse it; its output
 goes to logs/ollama_bench_server.log. ollama_proxy.py and the benchmark runners call it, so nothing
 has to be started by hand.
@@ -47,7 +50,8 @@ def ensure_server(url: str = BENCH_URL, num_ctx: int = NUM_CTX, log_file: Path =
     executable = shutil.which("ollama")
     if executable is None:
         raise RuntimeError("cannot start the benchmark Ollama server: `ollama` is not on the PATH")
-    env = {**os.environ, "OLLAMA_HOST": f"127.0.0.1:{BENCH_PORT}", "OLLAMA_CONTEXT_LENGTH": str(num_ctx)}
+    env = {**os.environ, "OLLAMA_HOST": f"127.0.0.1:{BENCH_PORT}", "OLLAMA_CONTEXT_LENGTH": str(num_ctx),
+           "OLLAMA_NUM_PARALLEL": "1"}
     log_file.parent.mkdir(parents=True, exist_ok=True)
     with log_file.open("a", encoding="utf-8") as log:
         log.write(f"\n--- {time.strftime('%Y-%m-%d %H:%M:%S')} ollama serve on {url}, context {num_ctx} ---\n")

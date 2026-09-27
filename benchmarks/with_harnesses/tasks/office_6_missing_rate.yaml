@@ -11,5 +11,6 @@ prompt: >
   columns rep,sales,commission_rate,commission, one row per rep of sales_by_rep.xlsx, commission
   rounded to 2 decimals. If a value you need is missing, do not invent it: leave the cell empty
   and tell me in your answer what is missing.
+  Python 3 is available from the shell, with openpyxl, python-docx and matplotlib installed.
 checks:
   - command: ["{python}", "{bench_dir}/office/verify.py", "office_6_missing_rate", "{stdout_file}"]

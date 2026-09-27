@@ -188,7 +188,10 @@ def main(argv: List[str]) -> int:
         print(e)
         return 1
     except Exception as e:  # an unreadable output file is a failed task, not a crash of the benchmark
-        print(f"could not read the result: {type(e).__name__}: {e}")
+        if type(e).__name__ in ("PackageNotFoundError", "InvalidFileException", "BadZipFile"):
+            print(f"an output file is not a real Office file (plain text saved as .docx/.xlsx?): {e}")
+        else:
+            print(f"could not read the result: {type(e).__name__}: {e}")
         return 1
     print("ok")
     return 0

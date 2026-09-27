@@ -11,5 +11,6 @@ prompt: >
   follow from row 2, in the same order as in the CSV, with Amount stored as numbers. On the row
   right after the last expense, write Total in column A and, in column C, an Excel SUM formula
   adding up all the amounts above it.
+  Python 3 is available from the shell, with openpyxl, python-docx and matplotlib installed.
 checks:
   - command: ["{python}", "{bench_dir}/office/verify.py", "office_2_xlsx_total", "{stdout_file}"]

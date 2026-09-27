@@ -26,7 +26,7 @@ PLACEHOLDERS = {"task", "model", "proxy_url", "v1_url", "num_ctx", "workspace", 
 CHECK_TYPES = {"stdout_contains", "file_equals", "file_contains", "file_unchanged", "command"}
 DEFAULT_TIMEOUT_S = 600
 DEFAULT_MAX_CALLS = 60   # model requests per run: beyond that, the agent is going in circles
-DEFAULT_IDLE_S = 300     # seconds without any finished model request: the agent is stuck (a hung command)
+DEFAULT_IDLE_S = 300     # seconds with no finished model request and an idle GPU: the agent is stuck (a hung command)
 
 _PLACEHOLDER = re.compile(r"\{(\w+)\}")
 

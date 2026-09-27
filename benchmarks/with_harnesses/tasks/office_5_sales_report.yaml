@@ -12,5 +12,6 @@ prompt: >
   Region and Revenue, one row per region (North, South, West) and a last row Total, where
   revenue is the sum of units x unit_price rounded to 2 decimals; a bar chart of the revenue per
   region, embedded as an image; and a short sentence saying which region had the highest revenue.
+  Python 3 is available from the shell, with openpyxl, python-docx and matplotlib installed.
 checks:
   - command: ["{python}", "{bench_dir}/office/verify.py", "office_5_sales_report", "{stdout_file}"]

@@ -12,5 +12,6 @@ prompt: >
   a copy of the template where each {{placeholder}} is replaced by the value of the matching
   column for that customer, keeping the rest of the letter as it is. Do not modify the template
   or the contact list.
+  Python 3 is available from the shell, with openpyxl, python-docx and matplotlib installed.
 checks:
   - command: ["{python}", "{bench_dir}/office/verify.py", "office_4_mail_merge", "{stdout_file}"]

@@ -15,5 +15,6 @@ prompt: >
   separator. Second, write region_month.csv with the columns region,2026-01,2026-02,2026-03: one
   row per region, sorted alphabetically, giving the total amount of that region's orders for each
   month, rounded to 2 decimals.
+  Python 3 is available from the shell, with openpyxl, python-docx and matplotlib installed.
 checks:
   - command: ["{python}", "{bench_dir}/office/verify.py", "office_3_clean_pivot", "{stdout_file}"]

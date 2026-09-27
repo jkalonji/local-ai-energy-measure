@@ -9,8 +9,8 @@ Everything between process start and process end counts, including the harness's
 the GPU's idle draw: that is what using the harness costs in practice.
 
 A run that goes in circles is stopped, whatever the harness, by three limits (see `watch_run`): the
-wall-clock timeout, a maximum number of model requests, and a maximum time without any finished
-model request (an agent stuck on a hung command).
+wall-clock timeout, a maximum number of model requests, and a maximum time with neither a finished
+model request nor a busy GPU (an agent stuck on a hung command; a long generation keeps the GPU busy).
 """
 
 import csv
@@ -39,6 +39,7 @@ from .definitions import Harness, Task, render
 TRANSCRIPT_LIMIT = 200_000  # characters kept per stream in the saved transcript
 SETTLE_S = 1.5  # let the tracker drain its sample buffer (0.5 s) and the proxy finish writing
 POLL_S = 1.0    # how often a running harness is checked against its limits
+BUSY_GPU_UTIL = 50  # % GPU utilization above which the model is generating (idle reads ~8%, generation ~100%)
 
 
 @dataclass
@@ -89,7 +90,8 @@ def run_process(argv: List[str], cwd: Path, env: Dict[str, str], timeout_s: floa
 
 
 class CallWatcher:
-    """Follows the model requests of a running harness, from the rows the proxy appends to the tracker log."""
+    """Follows a running harness through the tracker log: the requests the proxy logs when they finish,
+    and the GPU samples, which show a request still being generated."""
 
     def __init__(self, log_path: Path, start_ts: float):
         self.log_path = log_path
@@ -108,14 +110,25 @@ class CallWatcher:
         *lines, self.pending = (self.pending + data).split(b"\n")
         for fields in csv.reader(io.StringIO(b"\n".join(lines).decode("utf-8", errors="replace"))):
             row = parse_row(fields)
-            if row and row["row_type"] == "ollama_call":
+            if not row:
+                continue
+            if row["row_type"] == "ollama_call":
                 self.calls += 1
                 self.last_activity = time.time()
+            elif row["row_type"] == "sample" and _busy(row.get("gpu_util_pct")):
+                self.last_activity = time.time()
+
+
+def _busy(gpu_util_pct: Optional[str]) -> bool:
+    try:
+        return float(gpu_util_pct or 0) >= BUSY_GPU_UTIL
+    except ValueError:
+        return False
 
 
 def watch_run(task: Task, watcher: CallWatcher, now: Callable[[], float] = time.time) -> Callable[[], Optional[str]]:
     """The `stop` callback of a run: "loop_limit" past task.max_calls requests, "stalled" after task.idle_s
-    seconds without a finished request (a long generation still in flight also counts as silence)."""
+    seconds with neither a finished request nor a busy GPU."""
     def stop() -> Optional[str]:
         watcher.poll()
         if watcher.calls > task.max_calls:
@@ -219,7 +232,7 @@ def run_once(harness: Harness, model: str, task: Task, repeat: int, session: Ses
         stopped = {
             "timeout": f"timed out after {timeout_s} s",
             "loop_limit": f"stopped after {watcher.calls} model requests (limit {task.max_calls})",
-            "stalled": f"stopped: no model request finished for {task.idle_s} s",
+            "stalled": f"stopped: no model request finished and the GPU was idle for {task.idle_s} s",
         }
         if result.stop_reason:
             passed, detail = False, stopped[result.stop_reason]
@@ -241,7 +254,7 @@ def run_once(harness: Harness, model: str, task: Task, repeat: int, session: Ses
         }
         measurement = measure_run(session.log_path, start_ts, end_ts)
         notes = [measurement.pop("notes", "")]
-        if not measurement["n_calls"]:
+        if not measurement["n_calls"] and not result.stop_reason:  # a stopped run may have had one in flight
             notes.append("no model request went through the proxy: the harness bypassed it")
         row.update(measurement)
         row["notes"] = "; ".join(n for n in notes if n)

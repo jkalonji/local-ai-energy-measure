@@ -8,5 +8,6 @@ max_calls: 20
 prompt: >
   The file sales.csv in the current directory lists this month's orders. What is the total of
   its amount column? Reply with the total, rounded to 2 decimals.
+  Python 3 is available from the shell, with openpyxl, python-docx and matplotlib installed.
 checks:
   - command: ["{python}", "{bench_dir}/office/verify.py", "office_1_sum_column", "{stdout_file}"]
