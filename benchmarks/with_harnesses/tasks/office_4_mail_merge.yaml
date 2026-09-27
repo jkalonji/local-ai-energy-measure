@@ -1,0 +1,16 @@
+description: "Office L4: mail merge a Word template with an Excel contact list"
+suite: office
+level: 4
+needs_tools: true
+fixtures: office/fixtures/office_4_mail_merge
+timeout_s: 1200
+max_calls: 60
+prompt: >
+  Prepare the renewal letters. letter_template.docx is a Word letter with placeholders such as
+  {{first_name}}, and contacts.xlsx lists the customers. For every customer whose status is
+  Active, and only for them, create letters/<customer_id>.docx (for example letters/C101.docx):
+  a copy of the template where each {{placeholder}} is replaced by the value of the matching
+  column for that customer, keeping the rest of the letter as it is. Do not modify the template
+  or the contact list.
+checks:
+  - command: ["{python}", "{bench_dir}/office/verify.py", "office_4_mail_merge", "{stdout_file}"]

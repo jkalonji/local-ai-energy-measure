@@ -47,7 +47,8 @@ python ollama_proxy.py
 ```
 
 Transparent reverse proxy in front of Ollama (default: listens on `:11435`,
-forwards to `:11434`). Point any Ollama client at it instead of talking to
+forwards to the benchmark server on `:11436`, started if needed with a 32768-token
+context; `--ollama-url http://localhost:11434` forwards to the desktop app instead). Point any Ollama client at it instead of talking to
 Ollama directly:
 
 ```bash
@@ -184,21 +185,16 @@ harnesses and long agent prompts are not silently truncated (Ollama drops what e
 `num_ctx`). Harnesses call the OpenAI-compatible `/v1` API, which cannot carry `num_ctx`,
 and a model loaded with another context is reloaded at the server default. That default
 can be a model's full window: `qwen3:4b` tries to allocate ~150 GB of KV cache and fails.
-So the value is imposed on the server, and checked before a run:
-
-```bat
-:: cmd (quit the Ollama app first, or port 11434 is taken)
-set OLLAMA_CONTEXT_LENGTH=32768 & ollama serve
-:: or once, permanently (new processes only: restart the Ollama app afterwards)
-setx OLLAMA_CONTEXT_LENGTH 32768
-```
-
-```powershell
-$env:OLLAMA_CONTEXT_LENGTH = 32768; ollama serve     # PowerShell
-```
+So the benchmarks use an Ollama server of their own (`ollama_server.py`): a second
+`ollama serve` on `:11436`, started with `OLLAMA_CONTEXT_LENGTH=32768`. The Ollama desktop
+app can keep running on `:11434` (its own "Context length" setting would override the
+variable); both servers read the same models. Nothing to start by hand: `ollama_proxy.py`
+and the runner start it when it is not answering, detached, logging to
+`logs/ollama_bench_server.log`, and every later run reuses it. The context is still checked
+before a run:
 
 ```python
-common.require_context("qwen3:4b")   # raises with the fix if the model does not run at 32768
+common.require_context("qwen3:4b")   # raises if the model does not run at 32768
 ```
 
 Explicit `num_ctx` on native `/api/*` calls (the `without_harness` benchmark) still wins over

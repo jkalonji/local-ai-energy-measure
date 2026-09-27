@@ -7,11 +7,16 @@ counts, so re-running a combination replaces its old results without deleting th
 The matrix cell of a (model, harness) pair is "passed/runs · median energy", over the runs that
 actually executed. Combinations that were not run (the model lacks tool support, or failed to
 load) are shown as such and never counted as failures of the harness.
+
+A suite of tasks ranked by level (e.g. office) also gets <suite>_reliability.md: the pass rate of
+every level over its repeated runs, with a 95% Wilson interval, since 10 runs only bound it loosely.
+A run stopped by a limit (timeout, loop_limit, stalled) counts as a failure.
 """
 
 import csv
+import math
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Mapping, Optional, Tuple
 
 import pandas as pd
 
@@ -26,8 +31,9 @@ RUN_FIELDS = [
     "completion_tokens", "tokens_source", "energy_j", "energy_wh", "energy_in_calls_j",
     "energy_between_calls_j", "in_calls_share", "mean_power_w", "coverage", "notes",
 ]
-MEASURED = ("pass", "fail", "error", "timeout")
+MEASURED = ("pass", "fail", "error", "timeout", "loop_limit", "stalled")
 NOT_RUN = {"skipped_no_tools": "no tool support", "load_failed": "failed to load"}
+STOPPED = ("timeout", "loop_limit", "stalled")
 NUMERIC = ["repeat", "exit_code", "duration_s", "num_ctx_expected", "num_ctx_observed", "n_calls", "prompt_tokens",
            "completion_tokens", "energy_j", "energy_wh", "energy_in_calls_j", "energy_between_calls_j",
            "in_calls_share", "mean_power_w", "coverage"]
@@ -160,9 +166,74 @@ def render_markdown(runs: pd.DataFrame) -> str:
     return "\n".join(lines) + "\n"
 
 
-def write_reports(runs_path: Path = RUNS_CSV, matrix_csv: Path = MATRIX_CSV, matrix_md: Path = MATRIX_MD) -> None:
+def wilson(passed: int, runs: int, z: float = 1.96) -> Tuple[float, float]:
+    """95% Wilson score interval of a pass rate: honest even for 0/10 or 10/10."""
+    if not runs:
+        return float("nan"), float("nan")
+    p = passed / runs
+    centre = (p + z * z / (2 * runs)) / (1 + z * z / runs)
+    half = z * math.sqrt(p * (1 - p) / runs + z * z / (4 * runs * runs)) / (1 + z * z / runs)
+    return max(0.0, centre - half), min(1.0, centre + half)
+
+
+def render_reliability(runs: pd.DataFrame, suite: str, levels: Mapping[str, int]) -> str:
+    """Pass rate per level of one suite, for every (model, harness) that ran it. `levels`: task_id -> level."""
+    current = current_runs(runs)
+    current = current[current["task_id"].isin(levels) & current["status"].isin(MEASURED)]
+    ordered = sorted(levels, key=lambda t: (levels[t], t))
+    lines = [
+        f"# {suite} suite: reliability per level",
+        "",
+        "Each cell: pass rate over the runs of the most recent batch (passed/runs). The mean is the average of "
+        "the levels' pass rates. A run stopped for going in circles (timeout, too many model requests, no "
+        "request finished for too long) is a failure.",
+        "",
+    ]
+    if current.empty:
+        return "\n".join(lines + ["No run recorded yet."]) + "\n"
+    summary, detail = [], []
+    for (model, harness), group in current.groupby(["model", "harness"]):
+        cells, rates = [], []
+        for task_id in ordered:
+            done = group[group["task_id"] == task_id]
+            if done.empty:
+                cells.append("-")
+                continue
+            passed = int((done["status"] == "pass").sum())
+            rates.append(passed / len(done))
+            cells.append(f"{passed / len(done):.0%} ({passed}/{len(done)})")
+            low, high = wilson(passed, len(done))
+            stops = ", ".join(f"{n} {s}" for s, n in done["status"].value_counts().items() if s in STOPPED)
+            detail.append([model, harness, f"L{levels[task_id]}", task_id, f"{passed}/{len(done)}",
+                           f"{low:.0%}-{high:.0%}", _energy(done["energy_wh"].median()),
+                           f"{done['duration_s'].median():.0f} s", f"{done['n_calls'].median():.0f}", stops or "-"])
+        summary.append([model, harness, *cells, f"{sum(rates) / len(rates):.0%}" if rates else "-"])
+    lines += _table(["Model", "Harness", *(f"L{levels[t]}" for t in ordered), "Mean"], summary)
+    lines += ["", "## Detail", ""]
+    lines += _table(["Model", "Harness", "Level", "Task", "Passed", "95% interval", "Median energy", "Median time",
+                     "Median requests", "Stopped by a limit"], detail)
+    return "\n".join(lines) + "\n"
+
+
+def suite_levels(tasks_dir: Optional[Path] = None) -> Dict[str, Dict[str, int]]:
+    """suite -> {task_id: level}, for the tasks that declare a level."""
+    from .definitions import TASKS_DIR, list_names, load_task
+    directory = tasks_dir or TASKS_DIR
+    suites: Dict[str, Dict[str, int]] = {}
+    for name in list_names(directory):
+        task = load_task(name, directory)
+        if task.level is not None:
+            suites.setdefault(task.suite, {})[task.id] = task.level
+    return suites
+
+
+def write_reports(runs_path: Path = RUNS_CSV, matrix_csv: Path = MATRIX_CSV, matrix_md: Path = MATRIX_MD,
+                  suites: Optional[Mapping[str, Mapping[str, int]]] = None) -> None:
     runs = read_runs(runs_path)
     matrix = build_matrix(runs)
     matrix_csv.parent.mkdir(parents=True, exist_ok=True)
     matrix.to_csv(matrix_csv, index=False, float_format="%.6g")
     matrix_md.write_text(render_markdown(runs), encoding="utf-8")
+    for suite, levels in (suite_levels() if suites is None else suites).items():
+        if runs["task_id"].isin(levels).any():
+            (matrix_md.parent / f"{suite}_reliability.md").write_text(render_reliability(runs, suite, levels), encoding="utf-8")

@@ -11,3 +11,8 @@ logs/harness_runs/
 
 # Benchmark results are versioned even though runtime logs (*.csv) are not
 !results/**/*.csv
+# ...and so are the input files of the benchmark tasks
+!benchmarks/with_harnesses/office/fixtures/**/*.csv
+
+# Output of the benchmark Ollama server (ollama_server.py)
+logs/*.log

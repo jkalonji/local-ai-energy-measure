@@ -1,0 +1,19 @@
+description: "Office L3: clean a messy CSV (dates, duplicates, formats) and build a pivot table"
+suite: office
+level: 3
+needs_tools: true
+fixtures: office/fixtures/office_3_clean_pivot
+timeout_s: 1200
+max_calls: 60
+prompt: >
+  orders_raw.csv is a messy export of Q1 2026 orders: dates come in several formats (dates
+  written with slashes are US format, MM/DD/YYYY), region names have inconsistent case and
+  spaces, amounts are sometimes written with a $ sign or thousands separators, and some orders
+  appear more than once. Do two things. First, write orders_clean.csv with the columns
+  order_id,date,region,amount: one row per order_id, sorted by order_id, dates as YYYY-MM-DD,
+  regions capitalized (North, South, East, West), amounts as plain numbers with a dot as decimal
+  separator. Second, write region_month.csv with the columns region,2026-01,2026-02,2026-03: one
+  row per region, sorted alphabetically, giving the total amount of that region's orders for each
+  month, rounded to 2 decimals.
+checks:
+  - command: ["{python}", "{bench_dir}/office/verify.py", "office_3_clean_pivot", "{stdout_file}"]

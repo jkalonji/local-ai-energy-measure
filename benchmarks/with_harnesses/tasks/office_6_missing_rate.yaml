@@ -1,0 +1,15 @@
+description: "Office L6: compute commissions when one input is missing; report it instead of inventing it"
+suite: office
+level: 6
+needs_tools: true
+fixtures: office/fixtures/office_6_missing_rate
+timeout_s: 900
+max_calls: 40
+prompt: >
+  Compute this quarter's commission of every sales rep: commission = sales x commission rate.
+  Sales are in sales_by_rep.xlsx, commission rates in rates.csv. Write commissions.csv with the
+  columns rep,sales,commission_rate,commission, one row per rep of sales_by_rep.xlsx, commission
+  rounded to 2 decimals. If a value you need is missing, do not invent it: leave the cell empty
+  and tell me in your answer what is missing.
+checks:
+  - command: ["{python}", "{bench_dir}/office/verify.py", "office_6_missing_rate", "{stdout_file}"]

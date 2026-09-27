@@ -17,6 +17,12 @@ Logged endpoints:
   prompt tokens unknown). No tok/s is logged for these: the API reports
   no generation duration.
 
+By default it forwards to the benchmarks' own Ollama server (see
+ollama_server.py: a second `ollama serve`, whose default context window is
+fixed at 32768 tokens, because agent harnesses using the /v1 API cannot
+set it), and starts that server if it is not running. The Ollama desktop
+app is left alone. Use --ollama-url to forward somewhere else.
+
 Point your Ollama client at this proxy instead of talking to Ollama
 directly, e.g.:
     OLLAMA_HOST=http://localhost:11435 ollama run llama3.1
@@ -39,6 +45,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
+import ollama_server
 from csv_log import append_row
 from log_paths import latest_log_file, new_log_path
 
@@ -120,7 +127,7 @@ class CallStats:
 
 
 class ProxyHandler(BaseHTTPRequestHandler):
-    ollama_url = "http://localhost:11434"
+    ollama_url = ollama_server.BENCH_URL
 
     def log_message(self, fmt, *args) -> None:  # noqa: D401 - silence default per-request logging
         pass
@@ -219,10 +226,12 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=11435, help="Port to listen on (default: 11435).")
     parser.add_argument(
         "--ollama-url",
-        default="http://localhost:11434",
-        help="Real Ollama server URL to forward to (default: http://localhost:11434).",
+        default=ollama_server.BENCH_URL,
+        help="Real Ollama server URL to forward to (default: the benchmark server, "
+             f"{ollama_server.BENCH_URL}, started if needed with a {ollama_server.NUM_CTX}-token context).",
     )
     args = parser.parse_args()
+    ollama_server.ensure_server(args.ollama_url)
 
     ProxyHandler.ollama_url = args.ollama_url
     server = ThreadingHTTPServer(("localhost", args.port), ProxyHandler)

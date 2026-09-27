@@ -7,8 +7,14 @@ give the exact energy, split between the time a request was in flight and the ti
 
 Everything between process start and process end counts, including the harness's own start-up and
 the GPU's idle draw: that is what using the harness costs in practice.
+
+A run that goes in circles is stopped, whatever the harness, by three limits (see `watch_run`): the
+wall-clock timeout, a maximum number of model requests, and a maximum time without any finished
+model request (an agent stuck on a hung command).
 """
 
+import csv
+import io
 import os
 import shutil
 import subprocess
@@ -23,7 +29,7 @@ import requests
 
 from attribution import summarize_run
 from benchmarks import common
-from csv_log import append_row
+from csv_log import append_row, parse_row
 from gpu_samples import hires_path_for, read_hires
 from hires_report import read_rows
 
@@ -32,14 +38,16 @@ from .definitions import Harness, Task, render
 
 TRANSCRIPT_LIMIT = 200_000  # characters kept per stream in the saved transcript
 SETTLE_S = 1.5  # let the tracker drain its sample buffer (0.5 s) and the proxy finish writing
+POLL_S = 1.0    # how often a running harness is checked against its limits
 
 
 @dataclass
 class ProcessResult:
-    exit_code: Optional[int]   # None when the process was killed on timeout
+    exit_code: Optional[int]   # None when the process was killed
     stdout: str
     stderr: str
     timed_out: bool
+    stop_reason: str = ""      # why it was killed: "timeout", or the status returned by the `stop` callback
 
 
 @dataclass
@@ -62,16 +70,60 @@ def _kill_tree(proc: subprocess.Popen) -> None:
         proc.kill()
 
 
-def run_process(argv: List[str], cwd: Path, env: Dict[str, str], timeout_s: float) -> ProcessResult:
+def run_process(argv: List[str], cwd: Path, env: Dict[str, str], timeout_s: float,
+                stop: Optional[Callable[[], Optional[str]]] = None, poll_s: float = POLL_S) -> ProcessResult:
+    """Run `argv` to completion, killing it on timeout or as soon as `stop()` returns a reason."""
     proc = subprocess.Popen(argv, cwd=cwd, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace")
-    try:
-        stdout, stderr = proc.communicate(timeout=timeout_s)
-        return ProcessResult(proc.returncode, stdout, stderr, False)
-    except subprocess.TimeoutExpired:
-        _kill_tree(proc)
-        stdout, stderr = proc.communicate()
-        return ProcessResult(None, stdout or "", stderr or "", True)
+    deadline = time.monotonic() + timeout_s
+    while True:
+        try:  # communicate() may be retried after a timeout without losing output
+            stdout, stderr = proc.communicate(timeout=max(0.01, min(poll_s, deadline - time.monotonic())))
+            return ProcessResult(proc.returncode, stdout, stderr, False)
+        except subprocess.TimeoutExpired:
+            reason = "timeout" if time.monotonic() >= deadline else (stop() if stop else None)
+            if reason:
+                _kill_tree(proc)
+                stdout, stderr = proc.communicate()
+                return ProcessResult(None, stdout or "", stderr or "", reason == "timeout", reason)
+
+
+class CallWatcher:
+    """Follows the model requests of a running harness, from the rows the proxy appends to the tracker log."""
+
+    def __init__(self, log_path: Path, start_ts: float):
+        self.log_path = log_path
+        self.offset = log_path.stat().st_size if log_path.exists() else 0
+        self.pending = b""          # an incomplete last line, completed by the next read
+        self.calls = 0
+        self.last_activity = start_ts
+
+    def poll(self) -> None:
+        if not self.log_path.exists():
+            return
+        with self.log_path.open("rb") as f:
+            f.seek(self.offset)
+            data = f.read()
+        self.offset += len(data)
+        *lines, self.pending = (self.pending + data).split(b"\n")
+        for fields in csv.reader(io.StringIO(b"\n".join(lines).decode("utf-8", errors="replace"))):
+            row = parse_row(fields)
+            if row and row["row_type"] == "ollama_call":
+                self.calls += 1
+                self.last_activity = time.time()
+
+
+def watch_run(task: Task, watcher: CallWatcher, now: Callable[[], float] = time.time) -> Callable[[], Optional[str]]:
+    """The `stop` callback of a run: "loop_limit" past task.max_calls requests, "stalled" after task.idle_s
+    seconds without a finished request (a long generation still in flight also counts as silence)."""
+    def stop() -> Optional[str]:
+        watcher.poll()
+        if watcher.calls > task.max_calls:
+            return "loop_limit"
+        if now() - watcher.last_activity > task.idle_s:
+            return "stalled"
+        return None
+    return stop
 
 
 def measure_run(log_path: Path, start_ts: float, end_ts: float) -> Dict[str, object]:
@@ -139,6 +191,8 @@ def run_once(harness: Harness, model: str, task: Task, repeat: int, session: Ses
         workspace, home = root / "workspace", root / "home"
         workspace.mkdir()
         home.mkdir()
+        if task.fixtures:
+            shutil.copytree(task.fixtures, workspace, dirs_exist_ok=True)
         for relative, content in task.files.items():
             target = workspace / relative
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -155,16 +209,23 @@ def run_once(harness: Harness, model: str, task: Task, repeat: int, session: Ses
         argv = [render(part, values) for part in harness.command]
         env = {**os.environ, **{key: render(value, values) for key, value in harness.env.items()}}
 
+        timeout_s = task.timeout_s or harness.timeout_s
         start_ts = time.time()
-        result = run_process(argv, workspace, env, task.timeout_s or harness.timeout_s)
+        watcher = CallWatcher(session.log_path, start_ts)
+        result = run_process(argv, workspace, env, timeout_s, stop=watch_run(task, watcher))
         end_ts = time.time()
         sleep(session.settle_s)
 
-        if result.timed_out:
-            passed, detail = False, "timed out"
+        stopped = {
+            "timeout": f"timed out after {timeout_s} s",
+            "loop_limit": f"stopped after {watcher.calls} model requests (limit {task.max_calls})",
+            "stalled": f"stopped: no model request finished for {task.idle_s} s",
+        }
+        if result.stop_reason:
+            passed, detail = False, stopped[result.stop_reason]
         else:
             passed, detail = run_checks(task, workspace, result.stdout)
-        status = "timeout" if result.timed_out else "pass" if passed else ("error" if result.exit_code else "fail")
+        status = result.stop_reason or ("pass" if passed else ("error" if result.exit_code else "fail"))
 
         append_row(session.log_path, {
             "row_type": "run", "timestamp": end_ts, "call_start_ts": start_ts, "call_end_ts": end_ts,

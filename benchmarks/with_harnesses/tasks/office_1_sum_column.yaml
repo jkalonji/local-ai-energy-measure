@@ -1,0 +1,12 @@
+description: "Office L1: read one CSV and report the total of a column"
+suite: office
+level: 1
+needs_tools: true
+fixtures: office/fixtures/office_1_sum_column
+timeout_s: 600
+max_calls: 20
+prompt: >
+  The file sales.csv in the current directory lists this month's orders. What is the total of
+  its amount column? Reply with the total, rounded to 2 decimals.
+checks:
+  - command: ["{python}", "{bench_dir}/office/verify.py", "office_1_sum_column", "{stdout_file}"]

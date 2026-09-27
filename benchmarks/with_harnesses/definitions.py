@@ -2,7 +2,9 @@
 
 A harness is described by harnesses/<name>.yaml: how to start it headless on one task, and which
 files to generate for it. A task is described by tasks/<id>.yaml: the prompt, the files present in
-the workspace, and the objective checks that decide whether the agent did what was asked.
+the workspace (inline `files`, or a `fixtures` folder copied as is, for binary files such as .xlsx),
+the objective checks that decide whether the agent did what was asked, and the limits that stop a
+run going in circles (`timeout_s`, `max_calls`, `idle_s`, see execute.watch_run).
 
 Strings in a harness file may use {placeholders}, replaced in a single pass (so a task prompt that
 happens to contain "{model}" is left alone). `render` lists the known names.
@@ -11,7 +13,7 @@ happens to contain "{model}" is left alone). `render` lists the known names.
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Mapping
+from typing import Dict, List, Mapping, Optional
 
 import yaml
 
@@ -23,6 +25,8 @@ TASKS_DIR = HERE / "tasks"
 PLACEHOLDERS = {"task", "model", "proxy_url", "v1_url", "num_ctx", "workspace", "home", "harness_dir", "python"}
 CHECK_TYPES = {"stdout_contains", "file_equals", "file_contains", "file_unchanged", "command"}
 DEFAULT_TIMEOUT_S = 600
+DEFAULT_MAX_CALLS = 60   # model requests per run: beyond that, the agent is going in circles
+DEFAULT_IDLE_S = 300     # seconds without any finished model request: the agent is stuck (a hung command)
 
 _PLACEHOLDER = re.compile(r"\{(\w+)\}")
 
@@ -55,7 +59,12 @@ class Task:
     checks: List[dict]
     needs_tools: bool = False
     files: Dict[str, str] = field(default_factory=dict)   # path under the workspace -> content
+    fixtures: Optional[Path] = None  # folder whose content is copied into the workspace
     timeout_s: int = 0             # 0: use the harness timeout
+    max_calls: int = DEFAULT_MAX_CALLS
+    idle_s: int = DEFAULT_IDLE_S
+    suite: str = "core"
+    level: Optional[int] = None    # difficulty rank inside the suite
 
 
 def _read_yaml(path: Path) -> dict:
@@ -111,6 +120,11 @@ def load_task(task_id: str, directory: Path = TASKS_DIR) -> Task:
     for check in checks:
         if "file_unchanged" in check and check["file_unchanged"] not in files:
             raise ValueError(f"{path.name}: file_unchanged '{check['file_unchanged']}' is not one of the task files")
+    fixtures = None
+    if data.get("fixtures"):
+        fixtures = (HERE / str(data["fixtures"])).resolve()
+        if not fixtures.is_dir():
+            raise ValueError(f"{path.name}: fixtures folder {fixtures} does not exist")
     return Task(
         id=task_id,
         description=str(data["description"]),
@@ -118,7 +132,12 @@ def load_task(task_id: str, directory: Path = TASKS_DIR) -> Task:
         checks=checks,
         needs_tools=bool(data.get("needs_tools", False)),
         files=files,
+        fixtures=fixtures,
         timeout_s=int(data.get("timeout_s", 0)),
+        max_calls=int(data.get("max_calls", DEFAULT_MAX_CALLS)),
+        idle_s=int(data.get("idle_s", DEFAULT_IDLE_S)),
+        suite=str(data.get("suite", "core")),
+        level=int(data["level"]) if data.get("level") is not None else None,
     )
 
 

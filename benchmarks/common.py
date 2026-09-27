@@ -5,7 +5,6 @@ because it reuses the root-level `log_paths` module.
 """
 
 import csv
-import subprocess
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -13,18 +12,20 @@ import requests
 import yaml
 
 import log_paths
+import ollama_server
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 LOG_DIR = REPO_ROOT / "logs"
 MODELS_FILE = Path(__file__).with_name("models.yaml")
 
-OLLAMA_URL = "http://localhost:11434"
+OLLAMA_URL = ollama_server.BENCH_URL  # the benchmarks' own Ollama server, not the desktop app's
 PROXY_URL = "http://localhost:11435"
 
 # Context window for every with_harnesses run. Harnesses talk to the OpenAI-compatible /v1 API,
-# which cannot carry num_ctx, so it is imposed on the Ollama server (OLLAMA_CONTEXT_LENGTH) and
-# checked with require_context() before a run. without_harness keeps its own NUM_CTX=8192.
-HARNESS_NUM_CTX = 32768
+# which cannot carry num_ctx, so it is the default of the benchmark Ollama server (see
+# ollama_server.py) and checked with require_context() before a run. without_harness keeps its
+# own NUM_CTX=8192, sent with every request.
+HARNESS_NUM_CTX = ollama_server.NUM_CTX
 
 
 class ModelLoadError(RuntimeError):
@@ -86,12 +87,12 @@ def avg_power_in_window(log_path: Path, start_ts: float, end_ts: float) -> Tuple
     return sum(powers) / len(powers), len(powers)
 
 
-def ollama_stop(model: str) -> None:
+def ollama_stop(model: str, ollama_url: str = OLLAMA_URL) -> None:
     """Unload `model` from VRAM so the next model starts from a clean GPU."""
-    try:
-        subprocess.run(["ollama", "stop", model], capture_output=True, timeout=30)
-    except Exception as e:  # noqa: BLE001
-        print(f"  [warn] ollama stop {model} failed: {e}")
+    try:  # keep_alive 0 unloads it; `ollama stop` would talk to the desktop app's server instead
+        requests.post(f"{ollama_url}/api/generate", json={"model": model, "keep_alive": 0}, timeout=30)
+    except requests.RequestException as e:
+        print(f"  [warn] unloading {model} failed: {e}")
 
 
 def warmup(model: str, num_ctx: int, proxy_url: str = PROXY_URL) -> None:
@@ -133,10 +134,9 @@ def require_context(model: str, num_ctx: int = HARNESS_NUM_CTX, ollama_url: str 
 
 
 _CONTEXT_FIX = (
-    "Harnesses cannot set num_ctx per request. Quit Ollama, then start it with the variable set:\n"
-    "  cmd:        set OLLAMA_CONTEXT_LENGTH={num_ctx} & ollama serve\n"
-    "  PowerShell: $env:OLLAMA_CONTEXT_LENGTH = {num_ctx}; ollama serve\n"
-    "  (or run `setx OLLAMA_CONTEXT_LENGTH {num_ctx}` once and restart the Ollama app)"
+    "Harnesses cannot set num_ctx per request, so the benchmark Ollama server on " + OLLAMA_URL + " must\n"
+    "run with OLLAMA_CONTEXT_LENGTH={num_ctx}. Another server is listening there: stop the ollama.exe serving\n"
+    "port " + str(ollama_server.BENCH_PORT) + " and re-run; the benchmarks then start the right one themselves."
 )
 
 

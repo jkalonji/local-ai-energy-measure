@@ -7,13 +7,16 @@ logging proxy, while the GPU tracker records power. The result of a run is:
 - the GPU energy of the whole run, split between time spent inside model requests and time
   between them (harness start-up, tool execution)
 
-Usage (energy_tracker.py and ollama_proxy.py must run, Ollama with OLLAMA_CONTEXT_LENGTH=32768):
+Usage (energy_tracker.py and ollama_proxy.py must run; the benchmark Ollama server, with its fixed
+32768-token context, is started automatically, see ollama_server.py):
     python benchmarks/with_harnesses/run_harness_benchmark.py --harness dsh --models qwen3:4b
     python benchmarks/with_harnesses/run_harness_benchmark.py --harness dsh,ollama-agent-harness --set round_1 --tasks write_file
     python benchmarks/with_harnesses/run_harness_benchmark.py --harness dsh --models qwen3:4b --dry-run   # plan only
+    python benchmarks/with_harnesses/run_harness_benchmark.py --harness dsh --models qwen3:4b --suite office --repeat 10
     python benchmarks/with_harnesses/run_harness_benchmark.py --report-only                                # rebuild the matrix
 
-Results: results/with_harnesses/{runs.csv, matrix.csv, compatibility_matrix.md}.
+Results: results/with_harnesses/{runs.csv, matrix.csv, compatibility_matrix.md}, plus
+<suite>_reliability.md for every suite whose tasks have levels (e.g. office_reliability.md).
 """
 
 import argparse
@@ -26,6 +29,7 @@ import requests
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
+import ollama_server  # noqa: E402
 from benchmarks import common  # noqa: E402
 from benchmarks.with_harnesses import matrix  # noqa: E402
 from benchmarks.with_harnesses.definitions import (  # noqa: E402
@@ -42,9 +46,12 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     selection.add_argument("--models", help="comma-separated model names")
     selection.add_argument("--set", dest="set_name", help="named set from benchmarks/models.yaml")
     selection.add_argument("--all", action="store_true", help="every model of benchmarks/models.yaml (slow)")
-    parser.add_argument("--tasks", help=f"comma-separated tasks (default: all of {', '.join(list_names(TASKS_DIR))})")
+    tasks = parser.add_mutually_exclusive_group()
+    tasks.add_argument("--tasks", help=f"comma-separated tasks (default: all of {', '.join(list_names(TASKS_DIR))})")
+    tasks.add_argument("--suite", help="every task of one suite (the 'suite' field of the task files, e.g. office)")
     parser.add_argument("--repeat", type=int, default=1, help="runs per (harness, model, task) (default 1)")
     parser.add_argument("--timeout", type=int, help="seconds per run, overriding harness and task timeouts")
+    parser.add_argument("--max-calls", type=int, help="model requests allowed per run, overriding the task limits")
     parser.add_argument("--include-unsupported", action="store_true",
                         help="also run tool tasks on models Ollama does not report as supporting tools")
     parser.add_argument("--keep-workspaces", action="store_true", help="do not delete the workspace of each run")
@@ -70,7 +77,11 @@ def resolve_models(args: argparse.Namespace) -> List[str]:
 def preflight() -> None:
     """Fail early, with the fix, when something the measurement depends on is not running."""
     problems = []
-    for name, url in (("Ollama", common.OLLAMA_URL), ("the proxy (ollama_proxy.py)", common.PROXY_URL)):
+    try:
+        ollama_server.ensure_server(common.OLLAMA_URL)
+    except RuntimeError as e:
+        problems.append(str(e))
+    for name, url in (("the benchmark Ollama server", common.OLLAMA_URL), ("the proxy (ollama_proxy.py)", common.PROXY_URL)):
         try:
             requests.get(f"{url}/api/version", timeout=5).raise_for_status()
         except requests.RequestException:
@@ -89,7 +100,7 @@ def main(argv: Optional[List[str]] = None) -> None:
     args = parse_args(argv)
     if args.report_only:
         matrix.write_reports()
-        print(f"Wrote {matrix.MATRIX_CSV} and {matrix.MATRIX_MD}")
+        print(f"Wrote {matrix.MATRIX_CSV}, {matrix.MATRIX_MD} and the suite reliability reports")
         return
 
     names = list_names(HARNESSES_DIR) if args.harness == "all" else [h.strip() for h in args.harness.split(",")]
@@ -98,10 +109,17 @@ def main(argv: Optional[List[str]] = None) -> None:
         if not harness.dir.exists():
             raise SystemExit(f"{harness.name}: install directory {harness.dir} does not exist (edit 'dir' in its yaml)")
     tasks = [load_task(t.strip()) for t in (args.tasks.split(",") if args.tasks else list_names(TASKS_DIR))]
+    if args.suite:
+        tasks = [t for t in tasks if t.suite == args.suite]
+        if not tasks:
+            raise SystemExit(f"no task belongs to the suite '{args.suite}'")
     models = resolve_models(args)
     if args.timeout:
         for item in (*harnesses, *tasks):
             item.timeout_s = args.timeout
+    if args.max_calls:
+        for task in tasks:
+            task.max_calls = args.max_calls
 
     total = len(harnesses) * len(models) * len(tasks) * args.repeat
     print(f"{len(harnesses)} harness(es) x {len(models)} model(s) x {len(tasks)} task(s) x {args.repeat} = {total} runs")

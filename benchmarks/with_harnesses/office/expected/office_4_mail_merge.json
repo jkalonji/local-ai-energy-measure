@@ -1,0 +1,51 @@
+{
+  "letters": {
+    "C102": {
+      "first_name": "Bruno",
+      "company": "Globex",
+      "renewal_date": "October 29, 2026",
+      "amount": "$4,550.00"
+    },
+    "C103": {
+      "first_name": "Chloe",
+      "company": "Initech",
+      "renewal_date": "December 07, 2026",
+      "amount": "$8,950.00"
+    },
+    "C104": {
+      "first_name": "Daniel",
+      "company": "Umbrella Ltd",
+      "renewal_date": "November 01, 2026",
+      "amount": "$2,900.00"
+    },
+    "C105": {
+      "first_name": "Emma",
+      "company": "Stark Industries",
+      "renewal_date": "October 14, 2026",
+      "amount": "$7,450.00"
+    },
+    "C107": {
+      "first_name": "Grace",
+      "company": "Hooli",
+      "renewal_date": "November 14, 2026",
+      "amount": "$8,550.00"
+    },
+    "C109": {
+      "first_name": "Ines",
+      "company": "Soylent Co",
+      "renewal_date": "December 06, 2026",
+      "amount": "$1,400.00"
+    },
+    "C110": {
+      "first_name": "Jonas",
+      "company": "Tyrell Corp",
+      "renewal_date": "November 25, 2026",
+      "amount": "$3,150.00"
+    }
+  },
+  "inactive": [
+    "C101",
+    "C106",
+    "C108"
+  ]
+}

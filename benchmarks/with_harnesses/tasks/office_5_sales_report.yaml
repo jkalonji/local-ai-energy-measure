@@ -1,0 +1,16 @@
+description: "Office L5: consolidate three Excel files into a Word report with a table and a chart"
+suite: office
+level: 5
+needs_tools: true
+fixtures: office/fixtures/office_5_sales_report
+timeout_s: 1500
+max_calls: 80
+prompt: >
+  sales_north.xlsx, sales_south.xlsx and sales_west.xlsx hold the Q1 2026 sales of our three
+  regions, one line per sale (units sold and unit price). Write a Word report named
+  quarterly_report.docx containing: a title "Q1 2026 Sales Report"; a table with the columns
+  Region and Revenue, one row per region (North, South, West) and a last row Total, where
+  revenue is the sum of units x unit_price rounded to 2 decimals; a bar chart of the revenue per
+  region, embedded as an image; and a short sentence saying which region had the highest revenue.
+checks:
+  - command: ["{python}", "{bench_dir}/office/verify.py", "office_5_sales_report", "{stdout_file}"]

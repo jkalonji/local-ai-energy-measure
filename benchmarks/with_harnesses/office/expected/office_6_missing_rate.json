@@ -1,0 +1,25 @@
+{
+  "sales": {
+    "Aaron Blake": 93123.5,
+    "Beatriz Silva": 89788.59,
+    "Dana Whitfield": 83220.97,
+    "Ethan Cole": 24809.53,
+    "Fatima Zahra": 66578.1,
+    "Liam O'Connor": 107214.97
+  },
+  "rates": {
+    "Aaron Blake": 0.06,
+    "Beatriz Silva": 0.075,
+    "Ethan Cole": 0.075,
+    "Fatima Zahra": 0.04,
+    "Liam O'Connor": 0.075
+  },
+  "missing": "Dana Whitfield",
+  "commission": {
+    "Aaron Blake": 5587.41,
+    "Beatriz Silva": 6734.14,
+    "Ethan Cole": 1860.71,
+    "Fatima Zahra": 2663.12,
+    "Liam O'Connor": 8041.12
+  }
+}

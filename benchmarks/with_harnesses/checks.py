@@ -3,6 +3,9 @@
 Each check is one mapping, e.g. {"file_equals": "hello.txt", "content": "Bonjour"}.
 `run_checks` returns (passed, detail): every check must pass, and `detail` says why the first
 failing one failed, so a failed run can be understood without reading the transcript.
+
+A `command` check may use {python}, {bench_dir} (this benchmark's folder, e.g. to reach a verifier
+script the agent never sees) and {stdout_file} (a file holding the harness's final answer).
 """
 
 import subprocess
@@ -10,7 +13,7 @@ import sys
 from pathlib import Path
 from typing import List, Mapping, Tuple
 
-from .definitions import Task, render
+from .definitions import HERE, Task, render
 
 COMMAND_TIMEOUT_S = 120
 
@@ -54,7 +57,10 @@ def _check(check: Mapping, task: Task, workspace: Path, stdout: str) -> Tuple[bo
         unchanged = path.is_file() and _read(path) == task.files[name]
         return unchanged, f"{name} {'is unchanged' if unchanged else 'was modified or deleted'}"
 
-    argv = [render(str(part), {"python": sys.executable}) for part in check["command"]]
+    stdout_file = workspace.parent / f"{workspace.name}.stdout.txt"  # outside the workspace the agent worked in
+    stdout_file.write_text(stdout, encoding="utf-8")
+    values = {"python": sys.executable, "bench_dir": HERE, "stdout_file": stdout_file}
+    argv = [render(str(part), values) for part in check["command"]]
     try:
         done = subprocess.run(argv, cwd=workspace, capture_output=True, text=True, encoding="utf-8",
                               errors="replace", timeout=int(check.get("timeout_s", COMMAND_TIMEOUT_S)))

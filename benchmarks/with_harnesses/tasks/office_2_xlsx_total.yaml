@@ -1,0 +1,15 @@
+description: "Office L2: turn a CSV into a formatted Excel workbook with a SUM formula"
+suite: office
+level: 2
+needs_tools: true
+fixtures: office/fixtures/office_2_xlsx_total
+timeout_s: 900
+max_calls: 40
+prompt: >
+  Convert expenses.csv into an Excel workbook named expenses.xlsx with a single sheet named
+  Expenses. Row 1 holds the headers Category, Description and Amount, in bold. The expense lines
+  follow from row 2, in the same order as in the CSV, with Amount stored as numbers. On the row
+  right after the last expense, write Total in column A and, in column C, an Excel SUM formula
+  adding up all the amounts above it.
+checks:
+  - command: ["{python}", "{bench_dir}/office/verify.py", "office_2_xlsx_total", "{stdout_file}"]

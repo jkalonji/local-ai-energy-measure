@@ -3,3 +3,6 @@ requests
 streamlit
 pandas>=2.2.2
 pyyaml
+openpyxl
+python-docx
+matplotlib
