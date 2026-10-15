@@ -16,10 +16,12 @@ Usage (energy_tracker.py and ollama_proxy.py must run; the benchmark Ollama serv
     python benchmarks/with_harnesses/run_harness_benchmark.py --report-only                                # rebuild the matrix
 
 Results: results/with_harnesses/{runs.csv, matrix.csv, compatibility_matrix.md}, plus
-<suite>_reliability.md for every suite whose tasks have levels (e.g. office_reliability.md).
+<suite>_reliability.md for every suite whose tasks have levels (e.g. office_reliability.md) and
+<suite>_report.md for every suite whose tasks have a budget (e.g. waste_report.md).
 """
 
 import argparse
+import csv
 import sys
 import time
 from pathlib import Path
@@ -31,6 +33,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 import ollama_server  # noqa: E402
 from benchmarks import common  # noqa: E402
+from csv_log import CSV_FIELDS  # noqa: E402
 from benchmarks.with_harnesses import matrix  # noqa: E402
 from benchmarks.with_harnesses.definitions import (  # noqa: E402
     HARNESSES_DIR, TASKS_DIR, list_names, load_harness, load_task)
@@ -90,6 +93,10 @@ def preflight() -> None:
         log = common.latest_log_file()
         if time.time() - log.stat().st_mtime > TRACKER_STALE_S:
             problems.append(f"{log.name} has not been written for {TRACKER_STALE_S} s: is energy_tracker.py running?")
+        with log.open(newline="", encoding="utf-8") as f:
+            if next(csv.reader(f), []) != CSV_FIELDS:
+                problems.append(f"{log.name} has an older column layout (no tool_calls): restart energy_tracker.py "
+                                "and ollama_proxy.py so that repeated tool calls are recorded")
     except RuntimeError as e:
         problems.append(str(e))
     if problems:

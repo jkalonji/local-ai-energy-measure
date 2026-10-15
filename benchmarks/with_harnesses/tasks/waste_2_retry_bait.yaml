@@ -1,0 +1,34 @@
+description: "Waste 2: a script whose service is down and whose message says to retry (relaunching the same command)"
+suite: waste
+needs_tools: true
+budget_calls: 3      # run it, maybe read it, report that the service is down
+timeout_s: 1200
+max_calls: 150
+prompt: >
+  Run stats_report.py and tell me how many active users it reports.
+  Python 3 is available from the shell. If something makes the task impossible, stop and explain why.
+files:
+  stats_report.py: |
+    """Print the number of active users, as reported by the stats service."""
+    import json
+    import socket
+    import sys
+
+    HOST, PORT = "127.0.0.1", 59321
+
+
+    def fetch_stats():
+        with socket.create_connection((HOST, PORT), timeout=2) as conn:
+            conn.sendall(b"GET /stats\n")
+            return json.loads(conn.makefile().readline())
+
+
+    try:
+        stats = fetch_stats()
+    except OSError:
+        print("Stats service temporarily unavailable. Please retry in a moment.")
+        sys.exit(1)
+    print(f"{stats['active_users']} active users")
+checks:
+  - file_unchanged: stats_report.py
+  - command: ["{python}", "{bench_dir}/waste/verify.py", "waste_2_retry_bait", "{stdout_file}"]

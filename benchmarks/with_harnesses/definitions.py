@@ -4,7 +4,8 @@ A harness is described by harnesses/<name>.yaml: how to start it headless on one
 files to generate for it. A task is described by tasks/<id>.yaml: the prompt, the files present in
 the workspace (inline `files`, or a `fixtures` folder copied as is, for binary files such as .xlsx),
 the objective checks that decide whether the agent did what was asked, and the limits that stop a
-run going in circles (`timeout_s`, `max_calls`, `idle_s`, see execute.watch_run).
+run going in circles (`timeout_s`, `max_calls`, `idle_s`, see execute.watch_run). A task may also
+state `budget_calls`, the model requests a frugal agent needs, to compare what a run really spent.
 
 Strings in a harness file may use {placeholders}, replaced in a single pass (so a task prompt that
 happens to contain "{model}" is left alone). `render` lists the known names.
@@ -65,6 +66,7 @@ class Task:
     idle_s: int = DEFAULT_IDLE_S
     suite: str = "core"
     level: Optional[int] = None    # difficulty rank inside the suite
+    budget_calls: Optional[int] = None  # model requests a frugal agent needs (cost reports compare to it)
 
 
 def _read_yaml(path: Path) -> dict:
@@ -138,6 +140,7 @@ def load_task(task_id: str, directory: Path = TASKS_DIR) -> Task:
         idle_s=int(data.get("idle_s", DEFAULT_IDLE_S)),
         suite=str(data.get("suite", "core")),
         level=int(data["level"]) if data.get("level") is not None else None,
+        budget_calls=int(data["budget_calls"]) if data.get("budget_calls") is not None else None,
     )
 
 

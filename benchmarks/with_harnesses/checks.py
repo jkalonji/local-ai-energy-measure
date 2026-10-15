@@ -41,7 +41,13 @@ def _check(check: Mapping, task: Task, workspace: Path, stdout: str) -> Tuple[bo
             return False, f"{check['file_equals']} was not created"
         actual = _read(path).strip()
         expected = str(check["content"]).strip()
-        return actual == expected, f"{check['file_equals']} is {actual[:80]!r}, expected {expected[:80]!r}"
+        if actual == expected:
+            return True, f"{check['file_equals']} is as expected"
+        got, want = actual.splitlines(), expected.splitlines()
+        line = next((i for i, (a, b) in enumerate(zip(got, want)) if a != b), min(len(got), len(want)))
+        found = repr(got[line][:80]) if line < len(got) else "the end of the file"
+        wanted = repr(want[line][:80]) if line < len(want) else "the end of the file"
+        return False, f"{check['file_equals']} line {line + 1} is {found}, expected {wanted}"
 
     if "file_contains" in check:
         path = _inside(workspace, check["file_contains"])

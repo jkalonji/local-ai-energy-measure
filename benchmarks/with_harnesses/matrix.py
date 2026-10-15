@@ -11,6 +11,10 @@ load) are shown as such and never counted as failures of the harness.
 A suite of tasks ranked by level (e.g. office) also gets <suite>_reliability.md: the pass rate of
 every level over its repeated runs, with a 95% Wilson interval, since 10 runs only bound it loosely.
 A run stopped by a limit (timeout, loop_limit, stalled) counts as a failure.
+
+A suite whose tasks state a budget (e.g. waste) gets <suite>_report.md: what the runs cost against
+the frugal budget, who stopped them (the harness itself, or one of the benchmark's limits), and how
+much the agent repeated its own tool calls.
 """
 
 import csv
@@ -30,13 +34,15 @@ RUN_FIELDS = [
     "duration_s", "check_detail", "num_ctx_expected", "num_ctx_observed", "n_calls", "prompt_tokens",
     "completion_tokens", "tokens_source", "energy_j", "energy_wh", "energy_in_calls_j",
     "energy_between_calls_j", "in_calls_share", "mean_power_w", "coverage", "notes",
+    "max_prompt_tokens", "tool_calls", "repeated_tool_calls", "max_identical_streak",
 ]
 MEASURED = ("pass", "fail", "error", "timeout", "loop_limit", "stalled")
 NOT_RUN = {"skipped_no_tools": "no tool support", "load_failed": "failed to load"}
 STOPPED = ("timeout", "loop_limit", "stalled")
 NUMERIC = ["repeat", "exit_code", "duration_s", "num_ctx_expected", "num_ctx_observed", "n_calls", "prompt_tokens",
            "completion_tokens", "energy_j", "energy_wh", "energy_in_calls_j", "energy_between_calls_j",
-           "in_calls_share", "mean_power_w", "coverage"]
+           "in_calls_share", "mean_power_w", "coverage", "max_prompt_tokens", "tool_calls", "repeated_tool_calls",
+           "max_identical_streak"]
 
 
 def _format(value: object) -> object:
@@ -45,14 +51,26 @@ def _format(value: object) -> object:
     return "" if value is None else value
 
 
+def _upgrade(path: Path, header: List[str]) -> None:
+    """Rewrite a history written before the last columns were added, with those columns left empty."""
+    with path.open(newline="", encoding="utf-8") as f:
+        rows = list(csv.reader(f))[1:]
+    with path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(RUN_FIELDS)
+        writer.writerows(row + [""] * (len(RUN_FIELDS) - len(header)) for row in rows)
+
+
 def append_run(row: Dict[str, object], path: Path = RUNS_CSV) -> None:
-    """Append one result row, writing the header if the file is new."""
+    """Append one result row, writing the header if the file is new (or completing an older one's)."""
     path.parent.mkdir(parents=True, exist_ok=True)
     is_new = not path.exists() or path.stat().st_size == 0
     if not is_new:
         with path.open(newline="", encoding="utf-8") as f:
             header = next(csv.reader(f), [])
-        if header != RUN_FIELDS:
+        if header != RUN_FIELDS and header == RUN_FIELDS[:len(header)]:
+            _upgrade(path, header)
+        elif header != RUN_FIELDS:
             raise ValueError(f"{path.name} has a different column layout than this version writes: move it aside first")
     with path.open("a", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
@@ -64,7 +82,7 @@ def append_run(row: Dict[str, object], path: Path = RUNS_CSV) -> None:
 def read_runs(path: Path = RUNS_CSV) -> pd.DataFrame:
     if not path.exists():
         return pd.DataFrame(columns=RUN_FIELDS)
-    runs = pd.read_csv(path, dtype=str, keep_default_na=False)
+    runs = pd.read_csv(path, dtype=str, keep_default_na=False).reindex(columns=RUN_FIELDS, fill_value="")
     for column in NUMERIC:
         runs[column] = pd.to_numeric(runs[column], errors="coerce")
     return runs
@@ -215,20 +233,82 @@ def render_reliability(runs: pd.DataFrame, suite: str, levels: Mapping[str, int]
     return "\n".join(lines) + "\n"
 
 
-def suite_levels(tasks_dir: Optional[Path] = None) -> Dict[str, Dict[str, int]]:
-    """suite -> {task_id: level}, for the tasks that declare a level."""
+def _count(value: float) -> str:
+    if pd.isna(value):
+        return "?"
+    return f"{value / 1000:.0f}k" if value >= 10_000 else f"{value:.0f}"
+
+
+def render_cost(runs: pd.DataFrame, suite: str, budgets: Mapping[str, int]) -> str:
+    """What the runs of one suite cost against each task's frugal budget. `budgets`: task_id -> requests."""
+    current = current_runs(runs)
+    current = current[current["task_id"].isin(budgets) & current["status"].isin(MEASURED)].copy()
+    lines = [
+        f"# {suite} suite: what the runs cost",
+        "",
+        "Tokens are prompt + completion over every request of a run: an agent that loops sends its whole "
+        "conversation again at each request, so the prompt side is where waste shows. *x budget* compares "
+        "the requests of a run with the requests a frugal agent needs for the task. *Stopped by us* counts "
+        "the runs the harness did not end by itself: the benchmark killed them (timeout, too many requests, "
+        "no activity). *Identical streak* is the longest series of the same tool call with the same "
+        "arguments, back to back (what dsh's repeat reminder reacts to, at 3, 5 and 8); *repeats* counts "
+        "every call identical to an earlier one of the run, back to back or not.",
+        "",
+    ]
+    if current.empty:
+        return "\n".join(lines + ["No run recorded yet."]) + "\n"
+    current["tokens"] = current["prompt_tokens"] + current["completion_tokens"]
+    current["over_budget"] = current["n_calls"] / current["task_id"].map(budgets)
+    summary, detail = [], []
+    for (model, harness), group in current.groupby(["model", "harness"]):
+        stopped = int(group["status"].isin(STOPPED).sum())
+        summary.append([model, harness, f"{int((group['status'] == 'pass').sum())}/{len(group)}",
+                        f"{stopped}/{len(group)}", f"{group['over_budget'].median():.1f}x",
+                        _count(group["tokens"].sum()), _energy(group["energy_wh"].sum())])
+        for task_id, done in sorted(group.groupby("task_id"), key=lambda item: item[0]):
+            stops = ", ".join(f"{n} {s}" for s, n in done["status"].value_counts().items() if s in STOPPED)
+            detail.append([model, harness, task_id, f"{int((done['status'] == 'pass').sum())}/{len(done)}", stops or "-",
+                           f"{done['n_calls'].median():.0f} / {budgets[task_id]}",
+                           f"{done['over_budget'].median():.1f}x (max {done['over_budget'].max():.1f}x)",
+                           f"{_count(done['tokens'].median())} (max {_count(done['tokens'].max())})",
+                           _count(done["max_prompt_tokens"].max()),
+                           _count(done["max_identical_streak"].max()), _count(done["repeated_tool_calls"].median()),
+                           _energy(done["energy_wh"].median())])
+    lines += _table(["Model", "Harness", "Passed", "Stopped by us", "Median x budget", "Tokens, all runs",
+                     "Energy, all runs"], summary)
+    lines += ["", "## Detail per task", ""]
+    lines += _table(["Model", "Harness", "Task", "Passed", "Stopped by us", "Median requests / budget", "x budget",
+                     "Median tokens", "Peak context", "Max identical streak", "Median repeats", "Median energy"], detail)
+    return "\n".join(lines) + "\n"
+
+
+def _tasks(tasks_dir: Optional[Path] = None) -> list:
     from .definitions import TASKS_DIR, list_names, load_task
     directory = tasks_dir or TASKS_DIR
+    return [load_task(name, directory) for name in list_names(directory)]
+
+
+def suite_levels(tasks_dir: Optional[Path] = None) -> Dict[str, Dict[str, int]]:
+    """suite -> {task_id: level}, for the tasks that declare a level."""
     suites: Dict[str, Dict[str, int]] = {}
-    for name in list_names(directory):
-        task = load_task(name, directory)
+    for task in _tasks(tasks_dir):
         if task.level is not None:
             suites.setdefault(task.suite, {})[task.id] = task.level
     return suites
 
 
+def suite_budgets(tasks_dir: Optional[Path] = None) -> Dict[str, Dict[str, int]]:
+    """suite -> {task_id: budget_calls}, for the tasks that declare a budget."""
+    suites: Dict[str, Dict[str, int]] = {}
+    for task in _tasks(tasks_dir):
+        if task.budget_calls is not None:
+            suites.setdefault(task.suite, {})[task.id] = task.budget_calls
+    return suites
+
+
 def write_reports(runs_path: Path = RUNS_CSV, matrix_csv: Path = MATRIX_CSV, matrix_md: Path = MATRIX_MD,
-                  suites: Optional[Mapping[str, Mapping[str, int]]] = None) -> None:
+                  suites: Optional[Mapping[str, Mapping[str, int]]] = None,
+                  budgets: Optional[Mapping[str, Mapping[str, int]]] = None) -> None:
     runs = read_runs(runs_path)
     matrix = build_matrix(runs)
     matrix_csv.parent.mkdir(parents=True, exist_ok=True)
@@ -237,3 +317,6 @@ def write_reports(runs_path: Path = RUNS_CSV, matrix_csv: Path = MATRIX_CSV, mat
     for suite, levels in (suite_levels() if suites is None else suites).items():
         if runs["task_id"].isin(levels).any():
             (matrix_md.parent / f"{suite}_reliability.md").write_text(render_reliability(runs, suite, levels), encoding="utf-8")
+    for suite, task_budgets in (suite_budgets() if budgets is None else budgets).items():
+        if runs["task_id"].isin(task_budgets).any():
+            (matrix_md.parent / f"{suite}_report.md").write_text(render_cost(runs, suite, task_budgets), encoding="utf-8")

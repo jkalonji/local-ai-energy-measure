@@ -17,6 +17,10 @@ Logged endpoints:
   prompt tokens unknown). No tok/s is logged for these: the API reports
   no generation duration.
 
+The tool calls a response asks for are logged too, as "name#fingerprint"
+(a hash of the arguments, key order ignored): enough to see an agent
+repeating the same call, without storing the commands it ran.
+
 By default it forwards to the benchmarks' own Ollama server (see
 ollama_server.py: a second `ollama serve`, whose default context window is
 fixed at 32768 tokens, because agent harnesses using the /v1 API cannot
@@ -37,10 +41,11 @@ GPU samples and the Ollama calls land in the same log file)
 """
 
 import argparse
+import hashlib
 import json
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Optional
+from typing import Dict, List, Optional
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
@@ -53,6 +58,19 @@ NATIVE_PATHS = {"/api/generate", "/api/chat"}
 OPENAI_PATHS = {"/v1/chat/completions", "/v1/completions"}
 STAT_PATHS = NATIVE_PATHS | OPENAI_PATHS
 HOP_BY_HOP_HEADERS = {"connection", "keep-alive", "transfer-encoding", "content-length", "content-encoding"}
+FINGERPRINT_CHARS = 10
+
+
+def tool_fingerprint(name: str, arguments: object) -> str:
+    """"name#hash" of one tool call. The arguments may be a JSON string (OpenAI API) or an object
+    (native API); both hash the same when they hold the same values, whatever the key order."""
+    if isinstance(arguments, str):
+        try:
+            arguments = json.loads(arguments) if arguments.strip() else {}
+        except (json.JSONDecodeError, ValueError):
+            arguments = arguments.strip()
+    canonical = json.dumps(arguments, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return f"{name or '?'}#{hashlib.sha1(canonical.encode('utf-8')).hexdigest()[:FINGERPRINT_CHARS]}"
 
 
 class CallStats:
@@ -67,6 +85,9 @@ class CallStats:
         self._native_final: Optional[dict] = None
         self._usage: Optional[dict] = None
         self._content_chunks = 0
+        self._complete_tools: List[str] = []    # fingerprints of calls received whole
+        self._streamed_tools: List[Dict] = []   # calls assembled from OpenAI stream deltas
+        self._open_slot: Dict[int, Dict] = {}   # delta index -> the call it is currently extending
 
     def feed(self, line: bytes) -> None:
         text = line.strip()
@@ -81,6 +102,9 @@ class CallStats:
         if not isinstance(obj, dict):
             return
         self.model = obj.get("model") or self.model
+        for call in (obj.get("message") or {}).get("tool_calls") or []:  # native API, whole calls
+            function = call.get("function") or {}
+            self._complete_tools.append(tool_fingerprint(function.get("name", ""), function.get("arguments", {})))
         if obj.get("done"):
             self._native_final = obj
             return
@@ -91,13 +115,41 @@ class CallStats:
             if (choice.get("text") or delta.get("content") or delta.get("reasoning")
                     or delta.get("reasoning_content") or delta.get("tool_calls")):
                 self._content_chunks += 1
+            for call in (choice.get("message") or {}).get("tool_calls") or []:  # not streamed: whole calls
+                function = call.get("function") or {}
+                self._complete_tools.append(tool_fingerprint(function.get("name", ""), function.get("arguments", "")))
+            for part in delta.get("tool_calls") or []:
+                self._extend_streamed_call(part)
+
+    def _extend_streamed_call(self, part: dict) -> None:
+        """A streamed call arrives in pieces sharing an index: the first carries its id and name, the
+        next ones more of its arguments. A new id at an index already in use starts another call."""
+        index = part.get("index", 0)
+        function = part.get("function") or {}
+        slot = self._open_slot.get(index)
+        if slot is None or (part.get("id") and slot["id"] and part["id"] != slot["id"]):
+            slot = {"id": part.get("id") or "", "name": "", "arguments": ""}
+            self._open_slot[index] = slot
+            self._streamed_tools.append(slot)
+        slot["name"] = slot["name"] or function.get("name") or ""
+        slot["arguments"] += function.get("arguments") or ""
+
+    def tool_calls(self) -> List[str]:
+        """Fingerprints of the tool calls of the response, in order."""
+        return self._complete_tools + [tool_fingerprint(c["name"], c["arguments"]) for c in self._streamed_tools]
 
     def summary(self) -> Optional[dict]:
         """Token counts of the call, or None if the response had nothing to count.
 
         Keys: model, prompt_tokens (None if unknown), completion_tokens,
-        eval_duration_s (None unless native API), tokens_source.
+        eval_duration_s (None unless native API), tokens_source, tool_calls.
         """
+        counts = self._token_counts()
+        if counts is not None:
+            counts["tool_calls"] = self.tool_calls()
+        return counts
+
+    def _token_counts(self) -> Optional[dict]:
         if self._native_final is not None:
             final = self._native_final
             return {
@@ -215,6 +267,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
             "tps": tps,
             "endpoint": endpoint,
             "tokens_source": summary["tokens_source"],
+            "tool_calls": "|".join(summary.get("tool_calls") or []),
         })
         speed = f" @ {tps} tok/s" if tps else ""
         print(f"[ollama_proxy] {summary['model']}: {completion} tokens ({summary['tokens_source']}){speed} "

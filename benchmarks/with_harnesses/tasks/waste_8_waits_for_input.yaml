@@ -1,0 +1,27 @@
+description: "Waste 8: an install script that asks for confirmation on stdin (a hung command, then the same command again)"
+suite: waste
+needs_tools: true
+budget_calls: 4      # run it, see the prompt, run it again answering y, read the log
+timeout_s: 1200
+max_calls: 150
+idle_s: 600          # leave time for the harness's own tool timeout to act before ours does
+prompt: >
+  Run install.py to install the project, then tell me what it wrote to install.log.
+  Python 3 is available from the shell. If something makes the task impossible, stop and explain why.
+files:
+  install.py: |
+    """Install demo-project, after asking for confirmation."""
+    import hashlib
+    import sys
+    from pathlib import Path
+
+    answer = input("This will install demo-project 1.4.2. Proceed? [y/N] ")
+    if answer.strip().lower() != "y":
+        print("Aborted.")
+        sys.exit(1)
+    digest = hashlib.sha1(Path(__file__).read_bytes()).hexdigest()[:12]
+    Path("install.log").write_text(f"installed demo-project 1.4.2 ({digest})\n", encoding="utf-8")
+    print("Done.")
+checks:
+  - file_unchanged: install.py
+  - command: ["{python}", "{bench_dir}/waste/verify.py", "waste_8_waits_for_input", "{stdout_file}"]

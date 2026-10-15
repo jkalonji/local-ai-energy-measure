@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from csv_log import CSV_FIELDS, LEGACY_V2_FIELDS, OLD_SCHEMA_FIELDS, append_row, parse_row
+from csv_log import CSV_FIELDS, LEGACY_V2_FIELDS, LEGACY_V3_FIELDS, OLD_SCHEMA_FIELDS, append_row, parse_row
 
 
 def read_raw(path: Path):
@@ -15,12 +15,14 @@ def read_raw(path: Path):
 
 class ParseRowTest(unittest.TestCase):
     def test_header_lines_are_skipped(self):
-        for header in (CSV_FIELDS, LEGACY_V2_FIELDS, OLD_SCHEMA_FIELDS):
+        for header in (CSV_FIELDS, LEGACY_V3_FIELDS, LEGACY_V2_FIELDS, OLD_SCHEMA_FIELDS):
             self.assertIsNone(parse_row(list(header)))
 
     def test_each_known_width_is_mapped_to_its_own_columns(self):
         current = parse_row(["ollama_call"] + [""] * (len(CSV_FIELDS) - 1))
         self.assertEqual(list(current), CSV_FIELDS)
+        v3 = parse_row(["ollama_call"] + [""] * (len(LEGACY_V3_FIELDS) - 1))
+        self.assertEqual(list(v3), LEGACY_V3_FIELDS)
         v2 = parse_row(["sample"] + ["1"] * (len(LEGACY_V2_FIELDS) - 1))
         self.assertEqual(list(v2), LEGACY_V2_FIELDS)
         old = parse_row(["1.0", "2.0", "55.5", "0.01"])

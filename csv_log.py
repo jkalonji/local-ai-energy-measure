@@ -15,6 +15,11 @@ GPU sample, an Ollama call and a benchmark run can share one timeline:
   `call_end_ts` hold the run window; `harness`, `run_id`, `task_id` and
   `model` identify it. Calls belong to a run by time overlap.
 
+An "ollama_call" row also lists the tool calls the model asked for in
+`tool_calls`: "name#fingerprint" items joined by "|", where the
+fingerprint is a hash of the arguments, so an agent repeating the exact
+same call can be spotted without storing what it ran.
+
 energy_tracker.py and ollama_proxy.py can run as separate processes at
 the same time and both append to the same run's file, so every append
 is guarded by a short-lived lock file next to the CSV.
@@ -48,9 +53,8 @@ LEGACY_V2_FIELDS = [
     "tps",
 ]
 
-# Sample-row fields, then ollama_call-row fields, then run tagging. Unused
-# fields are left empty on a given row (e.g. an "ollama_call" row has no power_w).
-CSV_FIELDS = LEGACY_V2_FIELDS + [
+# Schema before tool calls were fingerprinted. Still found in existing log files.
+LEGACY_V3_FIELDS = LEGACY_V2_FIELDS + [
     "endpoint",
     "tokens_source",
     "harness",
@@ -58,10 +62,14 @@ CSV_FIELDS = LEGACY_V2_FIELDS + [
     "task_id",
 ]
 
+# Sample-row fields, then ollama_call-row fields, then run tagging. Unused
+# fields are left empty on a given row (e.g. an "ollama_call" row has no power_w).
+CSV_FIELDS = LEGACY_V3_FIELDS + ["tool_calls"]
+
 # Oldest schema, written by tracker processes started before row_type existed.
 OLD_SCHEMA_FIELDS = ["timestamp", "elapsed_s", "power_w", "energy_wh_cumulative"]
 
-_HEADERS = (CSV_FIELDS, LEGACY_V2_FIELDS, OLD_SCHEMA_FIELDS)
+_HEADERS = (CSV_FIELDS, LEGACY_V3_FIELDS, LEGACY_V2_FIELDS, OLD_SCHEMA_FIELDS)
 
 
 def parse_row(fields: List[str]) -> Optional[Dict[str, str]]:
@@ -76,6 +84,8 @@ def parse_row(fields: List[str]) -> Optional[Dict[str, str]]:
         return None
     if len(fields) == len(CSV_FIELDS):
         return dict(zip(CSV_FIELDS, fields))
+    if len(fields) == len(LEGACY_V3_FIELDS):
+        return dict(zip(LEGACY_V3_FIELDS, fields))
     if len(fields) == len(LEGACY_V2_FIELDS):
         return dict(zip(LEGACY_V2_FIELDS, fields))
     if len(fields) == len(OLD_SCHEMA_FIELDS):
@@ -111,7 +121,7 @@ def _columns_of_existing_file(log_path: Path) -> List[str]:
     full schema, else the current schema (the file then mixes widths)."""
     with log_path.open(newline="", encoding="utf-8") as f:
         header = next(csv.reader(f), [])
-    if header in (CSV_FIELDS, LEGACY_V2_FIELDS):
+    if header in (CSV_FIELDS, LEGACY_V3_FIELDS, LEGACY_V2_FIELDS):
         return header
     return CSV_FIELDS
 

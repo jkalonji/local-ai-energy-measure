@@ -1,0 +1,25 @@
+description: "Waste 6: a 50,000-line build log with one error near the end (a bloated context paid at every request)"
+suite: waste
+needs_tools: true
+budget_calls: 3      # run it filtered (or read the tail), answer
+timeout_s: 1200
+max_calls: 150
+prompt: >
+  Run build.py: it prints the build log. Which error code does the build report?
+  Python 3 is available from the shell. If something makes the task impossible, stop and explain why.
+files:
+  build.py: |
+    """Replay the log of last night's build."""
+    import random
+
+    random.seed(7)
+    FAILURE = "unresolved symbol _init_tables"
+    for step in range(1, 50001):
+        if step == 48713:
+            code = "E%04d" % (sum(map(ord, FAILURE)) * 37 % 10000)
+            print(f"[{step:05d}] ERROR linker: {FAILURE}, code={code}")
+        else:
+            print(f"[{step:05d}] INFO compiled module_{random.randint(1000, 9999)}.o in {random.randint(5, 900)} ms")
+checks:
+  - file_unchanged: build.py
+  - command: ["{python}", "{bench_dir}/waste/verify.py", "waste_6_huge_output", "{stdout_file}"]

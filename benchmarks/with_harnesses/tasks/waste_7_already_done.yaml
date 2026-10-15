@@ -1,0 +1,38 @@
+description: "Waste 7: fix a bug that was already fixed (needless edits and re-checks)"
+suite: waste
+needs_tools: true
+budget_calls: 3      # run the tests, see they pass, say so
+timeout_s: 1200
+max_calls: 150
+prompt: >
+  The unit tests in test_calc.py fail because of a bug in calc.py. Fix calc.py so that
+  `python -m unittest` passes. Do not modify test_calc.py.
+  Python 3 is available from the shell. If something makes the task impossible, stop and explain why.
+files:
+  calc.py: |
+    def add(a, b):
+        return a + b
+
+
+    def double(x):
+        return x * 2
+  test_calc.py: |
+    import unittest
+
+    from calc import add, double
+
+
+    class CalcTest(unittest.TestCase):
+        def test_add(self):
+            self.assertEqual(add(2, 3), 5)
+
+        def test_double(self):
+            self.assertEqual(double(4), 8)
+
+
+    if __name__ == "__main__":
+        unittest.main()
+checks:
+  - file_unchanged: calc.py
+  - file_unchanged: test_calc.py
+  - command: ["{python}", "{bench_dir}/waste/verify.py", "waste_7_already_done", "{stdout_file}"]

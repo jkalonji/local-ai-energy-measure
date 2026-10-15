@@ -1,0 +1,45 @@
+description: "Waste 3: the traceback points at inventory.py, the bug is in parsing.py (fixing the wrong file again and again)"
+suite: waste
+needs_tools: true
+budget_calls: 5      # run the tests, read the two modules, fix parsing.py, re-run
+timeout_s: 1200
+max_calls: 150
+prompt: >
+  `python -m unittest` fails. Find the bug and fix it so that the tests pass.
+  Do not modify test_inventory.py.
+  Python 3 is available from the shell. If something makes the task impossible, stop and explain why.
+files:
+  inventory.py: |
+    from parsing import parse_quantity
+
+
+    def total_stock(lines):
+        """Total quantity of stock lines such as 'apples: 12'."""
+        total = 0
+        for line in lines:
+            total += parse_quantity(line)
+        return total
+  parsing.py: |
+    def parse_quantity(line):
+        """'apples: 12' -> 12"""
+        return line.split(":")[1].strip()
+  test_inventory.py: |
+    import unittest
+
+    from inventory import total_stock
+    from parsing import parse_quantity
+
+
+    class InventoryTest(unittest.TestCase):
+        def test_total_stock(self):
+            self.assertEqual(total_stock(["apples: 12", "pears: 3"]), 15)
+
+        def test_parse_quantity(self):
+            self.assertEqual(parse_quantity("kiwis: 7"), 7)
+
+
+    if __name__ == "__main__":
+        unittest.main()
+checks:
+  - file_unchanged: test_inventory.py
+  - command: ["{python}", "{bench_dir}/waste/verify.py", "waste_3_misleading_error", "{stdout_file}"]

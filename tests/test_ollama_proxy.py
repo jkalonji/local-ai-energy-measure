@@ -12,7 +12,7 @@ from unittest import mock
 
 import csv_log
 import ollama_proxy
-from ollama_proxy import CallStats
+from ollama_proxy import CallStats, tool_fingerprint
 
 
 def sse(*objects):
@@ -169,6 +169,27 @@ class CallStatsTest(unittest.TestCase):
     def test_legacy_completions_text_chunks_count(self):
         summary = self.feed(b'data: {"model":"m","choices":[{"text":"a"}]}', b'data: {"model":"m","choices":[{"text":"b"}]}')
         self.assertEqual(summary["completion_tokens"], 2)
+
+    def test_streamed_tool_calls_are_assembled_from_their_pieces(self):
+        summary = self.feed(
+            b'data: {"model":"m","choices":[{"delta":{"tool_calls":[{"index":0,"id":"a","function":{"name":"bash","arguments":"{\\"cmd\\":"}}]}}]}',
+            b'data: {"model":"m","choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\\"ls\\"}"}}]}}]}',
+            b'data: {"model":"m","choices":[{"delta":{"tool_calls":[{"index":0,"id":"b","function":{"name":"read","arguments":"{}"}}]}}]}',
+        )
+        self.assertEqual(summary["tool_calls"], [tool_fingerprint("bash", {"cmd": "ls"}), tool_fingerprint("read", {})])
+
+    def test_whole_tool_calls_of_both_apis_are_fingerprinted(self):
+        native = self.feed(json.dumps({"model": "m", "done": False, "message": {"tool_calls": [
+            {"function": {"name": "bash", "arguments": {"cmd": "ls", "cwd": "."}}}]}}).encode(),
+            json.dumps({"model": "m", "done": True, "eval_count": 1}).encode())
+        plain = self.feed(json.dumps({"model": "m", "usage": {"prompt_tokens": 1, "completion_tokens": 1}, "choices": [
+            {"message": {"tool_calls": [{"function": {"name": "bash", "arguments": '{"cwd": ".", "cmd": "ls"}'}}]}}]}).encode())
+        self.assertEqual(native["tool_calls"], plain["tool_calls"])  # same call, key order ignored
+        self.assertEqual(len(native["tool_calls"]), 1)
+
+    def test_different_arguments_give_different_fingerprints(self):
+        self.assertNotEqual(tool_fingerprint("bash", '{"cmd": "ls"}'), tool_fingerprint("bash", '{"cmd": "dir"}'))
+        self.assertEqual(tool_fingerprint("bash", "not json"), tool_fingerprint("bash", " not json "))
 
     def test_usage_wins_over_chunk_count(self):
         summary = self.feed(b'data: {"model":"m","choices":[{"delta":{"content":"a"}}]}',

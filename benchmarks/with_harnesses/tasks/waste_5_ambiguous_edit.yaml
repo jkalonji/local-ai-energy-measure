@@ -1,0 +1,47 @@
+description: "Waste 5: change one of three identical lines (an edit tool that refuses ambiguous matches, retried as is)"
+suite: waste
+needs_tools: true
+budget_calls: 3      # read, edit with enough context, confirm
+timeout_s: 1200
+max_calls: 150
+prompt: >
+  In settings.py, set the timeout of the Cache class to 60. Leave everything else unchanged.
+  Python 3 is available from the shell. If something makes the task impossible, stop and explain why.
+files:
+  settings.py: |
+    class Database:
+        host = "db.internal"
+        timeout = 30
+        retries = 3
+
+
+    class Cache:
+        host = "cache.internal"
+        timeout = 30
+        retries = 3
+
+
+    class Http:
+        host = "api.internal"
+        timeout = 30
+        retries = 3
+checks:
+  - file_equals: settings.py
+    content: |
+      class Database:
+          host = "db.internal"
+          timeout = 30
+          retries = 3
+
+
+      class Cache:
+          host = "cache.internal"
+          timeout = 60
+          retries = 3
+
+
+      class Http:
+          host = "api.internal"
+          timeout = 30
+          retries = 3
+  - command: ["{python}", "{bench_dir}/waste/verify.py", "waste_5_ambiguous_edit", "{stdout_file}"]

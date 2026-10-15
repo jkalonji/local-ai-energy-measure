@@ -23,7 +23,7 @@ import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, Iterable, List, Optional
 
 import requests
 
@@ -139,22 +139,46 @@ def watch_run(task: Task, watcher: CallWatcher, now: Callable[[], float] = time.
     return stop
 
 
+def repetition(fingerprints: Iterable[str]) -> Dict[str, int]:
+    """How much an agent repeated itself, from the tool calls of a run in order ("name#hash" items).
+
+    - max_identical_streak: the longest series of the same call, back to back. This is all the
+      harness guards of the dsh kind can see (they react to consecutive exact repeats).
+    - repeated_tool_calls: calls identical to any earlier one of the run, consecutive or not, so an
+      agent alternating between two attempts (A, B, A, B...) is counted too.
+    """
+    calls = list(fingerprints)
+    seen, streak, longest, repeated = set(), 0, 0, 0
+    for index, call in enumerate(calls):
+        repeated += call in seen
+        seen.add(call)
+        streak = streak + 1 if index and calls[index - 1] == call else 1
+        longest = max(longest, streak)
+    return {"tool_calls": len(calls), "repeated_tool_calls": repeated, "max_identical_streak": longest}
+
+
 def measure_run(log_path: Path, start_ts: float, end_ts: float) -> Dict[str, object]:
-    """Energy and request statistics of the window [start_ts, end_ts] from the tracker log."""
+    """Energy, request and repetition statistics of the window [start_ts, end_ts] from the tracker log."""
     rows = read_rows(log_path)
     calls = rows[rows["row_type"] == "ollama_call"]
-    calls = calls[(calls["call_end_ts"] >= start_ts) & (calls["call_start_ts"] <= end_ts)]
+    calls = calls[(calls["call_end_ts"] >= start_ts) & (calls["call_start_ts"] <= end_ts)].sort_values("call_start_ts")
     sources = sorted({s for s in calls["tokens_source"] if s})
     measured: Dict[str, object] = {
         "n_calls": len(calls),
         "prompt_tokens": calls["prompt_tokens"].sum(min_count=1),
         "completion_tokens": calls["completion_tokens"].sum(min_count=1),
         "tokens_source": "+".join(sources),
+        "max_prompt_tokens": calls["prompt_tokens"].max() if len(calls) else None,
     }
+    recorded = calls["tool_calls"].dropna()  # missing (not empty) on rows written by an older proxy
+    if len(recorded) == len(calls):
+        measured.update(repetition(fp for cell in recorded for fp in cell.split("|") if fp))
+    notes = [] if len(recorded) == len(calls) else ["tool calls not recorded: restart ollama_proxy.py and energy_tracker.py"]
     try:
         power, _ = read_hires(hires_path_for(log_path))
     except FileNotFoundError:
-        return {**measured, "notes": "no hi-res power log: was the tracker started with --no-hires?"}
+        notes.append("no hi-res power log: was the tracker started with --no-hires?")
+        return {**measured, "notes": "; ".join(notes)}
     summary = summarize_run(power, calls, start_ts, end_ts)
     covered_s = summary["covered_s"]
     measured.update({
@@ -167,9 +191,10 @@ def measure_run(log_path: Path, start_ts: float, end_ts: float) -> Dict[str, obj
         "coverage": covered_s / summary["run_s"] if summary["run_s"] > 0 else None,
     })
     if not covered_s:
-        measured["notes"] = "no GPU power samples in the run window"
+        notes.append("no GPU power samples in the run window")
     elif measured["coverage"] < 0.99:
-        measured["notes"] = f"GPU power samples cover only {measured['coverage']:.0%} of the run"
+        notes.append(f"GPU power samples cover only {measured['coverage']:.0%} of the run")
+    measured["notes"] = "; ".join(notes)
     return measured
 
 

@@ -123,7 +123,8 @@ t = time.time()
 log = Path(os.environ["TEST_LOG"])
 Path("hello.txt").write_text(os.environ.get("TEST_CONTENT", "Bonjour"), encoding="utf-8")
 append_row(log, {"row_type": "ollama_call", "call_start_ts": t + 0.05, "call_end_ts": t + 0.15, "model": "m",
-                 "prompt_tokens": 5, "completion_tokens": 7, "tokens_source": "usage", "endpoint": "/v1/chat/completions"})
+                 "prompt_tokens": 5, "completion_tokens": 7, "tokens_source": "usage", "endpoint": "/v1/chat/completions",
+                 "tool_calls": os.environ.get("TEST_TOOLS", "")})
 time.sleep(float(os.environ.get("TEST_SLEEP", "0.3")))
 hires = hires_path_for(log)
 hires.parent.mkdir(exist_ok=True)
@@ -163,7 +164,12 @@ class RunOnceTest(unittest.TestCase):
         self.assertAlmostEqual(row["coverage"], 1.0, places=4)
         self.assertEqual((row["prompt_tokens"], row["completion_tokens"], row["tokens_source"]), (5, 7, "usage"))
         self.assertEqual(row["num_ctx_observed"], 32768)
+        self.assertEqual((row["max_prompt_tokens"], row["tool_calls"], row["max_identical_streak"]), (5, 0, 0))
         self.assertEqual(row["notes"], "")
+
+    def test_repeated_tool_calls_are_counted(self):
+        row = self.run_fake(TEST_TOOLS="bash#a|bash#a|read#b")
+        self.assertEqual((row["tool_calls"], row["repeated_tool_calls"], row["max_identical_streak"]), (3, 1, 2))
 
     def test_prompt_placeholders_are_not_expanded_inside_the_task_text(self):
         self.run_fake()
@@ -227,6 +233,19 @@ def result(harness="h", model="m", task_id="t", status="pass", batch="b1", repea
     return row
 
 
+class RepetitionTest(unittest.TestCase):
+    def test_streak_counts_back_to_back_repeats_only(self):
+        self.assertEqual(execute.repetition(["a", "a", "a", "b", "a"]),
+                         {"tool_calls": 5, "repeated_tool_calls": 3, "max_identical_streak": 3})
+
+    def test_alternating_attempts_are_repeats_without_a_streak(self):
+        self.assertEqual(execute.repetition(["a", "b", "a", "b"]),
+                         {"tool_calls": 4, "repeated_tool_calls": 2, "max_identical_streak": 1})
+
+    def test_no_tool_call(self):
+        self.assertEqual(execute.repetition([]), {"tool_calls": 0, "repeated_tool_calls": 0, "max_identical_streak": 0})
+
+
 class MatrixTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -247,6 +266,24 @@ class MatrixTest(unittest.TestCase):
         self.path.write_text("old,layout\n1,2\n", encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "column layout"):
             matrix.append_run(result(), self.path)
+
+    def test_a_history_missing_the_newest_columns_is_completed(self):
+        old = matrix.RUN_FIELDS[:-4]
+        self.path.write_text(",".join(old) + "\n" + ",".join(["x"] * len(old)) + "\n", encoding="utf-8")
+        runs = self.add(result(tool_calls=3))
+        self.assertEqual(self.path.read_text(encoding="utf-8").splitlines()[0], ",".join(matrix.RUN_FIELDS))
+        self.assertEqual(len(runs), 2)
+        self.assertTrue(pd.isna(runs["tool_calls"].iloc[0]))
+        self.assertEqual(runs["tool_calls"].iloc[1], 3)
+
+    def test_cost_report_compares_requests_with_the_budget_and_counts_our_stops(self):
+        runs = self.add(result(task_id="w", n_calls=4, prompt_tokens=30000, completion_tokens=1000, max_prompt_tokens=9000,
+                               max_identical_streak=1, repeated_tool_calls=0),
+                        result(task_id="w", repeat=2, status="loop_limit", n_calls=60, prompt_tokens=900000,
+                               completion_tokens=20000, max_prompt_tokens=31000, max_identical_streak=7, repeated_tool_calls=40))
+        text = matrix.render_cost(runs, "waste", {"w": 4})
+        self.assertIn("| m | h | 1/2 | 1/2 | 8.0x | 951k | 0.20 Wh |", text)
+        self.assertIn("| m | h | w | 1/2 | 1 loop_limit | 32 / 4 | 8.0x (max 15.0x) | 476k (max 920k) | 31k | 7 | 20 | 0.10 Wh |", text)
 
     def test_a_newer_batch_replaces_an_older_one_per_task(self):
         runs = self.add(result(batch="b1", status="fail"), result(batch="b2", status="pass"),
@@ -286,6 +323,12 @@ class MatrixTest(unittest.TestCase):
         self.assertIn("model,harness,runs,passed", csv_out.read_text(encoding="utf-8"))
         self.assertIn("Model x harness", md_out.read_text(encoding="utf-8"))
 
+    def test_write_reports_adds_a_cost_report_for_suites_with_budgets(self):
+        self.add(result(task_id="w", prompt_tokens=10, completion_tokens=5))
+        md_out = Path(self.tmp.name) / "m.md"
+        matrix.write_reports(self.path, Path(self.tmp.name) / "m.csv", md_out, suites={}, budgets={"waste": {"w": 3}})
+        self.assertIn("what the runs cost", (md_out.parent / "waste_report.md").read_text(encoding="utf-8"))
+
 
 class CliTest(unittest.TestCase):
     def parse(self, *argv):
@@ -313,9 +356,9 @@ class CliTest(unittest.TestCase):
                 name="fake", description="d", dir=Path(tmp), command=["x", "{task}"])), \
                 mock.patch.object(cli, "preflight", side_effect=AssertionError("must not check services")), \
                 contextlib.redirect_stdout(out):
-            cli.main(["--harness", "fake", "--models", "a,b", "--tasks", "write_file", "--repeat", "2", "--dry-run"])
+            cli.main(["--harness", "fake", "--models", "a,b", "--tasks", "office_1_sum_column", "--repeat", "2", "--dry-run"])
         self.assertIn("1 harness(es) x 2 model(s) x 1 task(s) x 2 = 4 runs", out.getvalue())
-        self.assertIn("fake / b: write_file", out.getvalue())
+        self.assertIn("fake / b: office_1_sum_column", out.getvalue())
 
 
 if __name__ == "__main__":
