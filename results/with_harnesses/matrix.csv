@@ -1,2 +1,2 @@
 model,harness,runs,passed,pass_rate,median_energy_wh,median_duration_s,not_run
-qwen3:4b,dsh,3,3,1,0.93376,101.325,
+qwen3:4b,dsh,63,17,0.269841,7.72651,170.846,
