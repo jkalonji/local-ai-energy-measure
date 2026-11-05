@@ -1,3 +1,6 @@
 model,harness,runs,passed,pass_rate,median_energy_wh,median_duration_s,not_run
+granite3.1-dense:2b,dsh,70,28,0.4,0.174763,5.34612,
+granite3.1-dense:8b,dsh,70,20,0.285714,0.350625,9.12966,
+llama3.1:8b,dsh,70,18,0.257143,0.25601,7.22992,
 qwen3.5:9b,dsh,70,57,0.814286,3.18919,74.8354,
 qwen3:4b,dsh,130,42,0.323077,5.47715,114.558,

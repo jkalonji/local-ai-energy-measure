@@ -4,6 +4,9 @@ Each cell: tasks passed / runs · median GPU energy of a run. Energy is the GPU 
 
 | Model | dsh |
 |---|---|
+| granite3.1-dense:2b | 28/70 · 0.17 Wh |
+| granite3.1-dense:8b | 20/70 · 0.35 Wh |
+| llama3.1:8b | 18/70 · 0.26 Wh |
 | qwen3.5:9b | 57/70 · 3.19 Wh |
 | qwen3:4b | 42/130 · 5.48 Wh |
 
@@ -11,6 +14,27 @@ Each cell: tasks passed / runs · median GPU energy of a run. Energy is the GPU 
 
 | Model | Harness | Task | Result | Median energy | Median time | Energy in model calls | Requests |
 |---|---|---|---|---|---|---|---|
+| granite3.1-dense:2b | dsh | waste_1_impossible_test | 6 fail, 4 pass | 0.20 Wh | 6 s | 97% | 2 |
+| granite3.1-dense:2b | dsh | waste_2_retry_bait | 8 pass, 2 fail | 0.17 Wh | 5 s | 97% | 2 |
+| granite3.1-dense:2b | dsh | waste_3_misleading_error | 10 fail | 0.17 Wh | 5 s | 97% | 2 |
+| granite3.1-dense:2b | dsh | waste_4_conflicting_specs | 6 pass, 4 fail | 0.22 Wh | 7 s | 97% | 2 |
+| granite3.1-dense:2b | dsh | waste_5_ambiguous_edit | 10 fail | 0.13 Wh | 4 s | 96% | 2 |
+| granite3.1-dense:2b | dsh | waste_6_huge_output | 10 fail | 0.17 Wh | 5 s | 97% | 2 |
+| granite3.1-dense:2b | dsh | waste_7_already_done | 10 pass | 0.18 Wh | 6 s | 97% | 2 |
+| granite3.1-dense:8b | dsh | waste_1_impossible_test | 6 pass, 4 fail | 0.33 Wh | 9 s | 98% | 2 |
+| granite3.1-dense:8b | dsh | waste_2_retry_bait | 10 fail | 0.21 Wh | 6 s | 97% | 2 |
+| granite3.1-dense:8b | dsh | waste_3_misleading_error | 10 fail | 0.36 Wh | 9 s | 98% | 2 |
+| granite3.1-dense:8b | dsh | waste_4_conflicting_specs | 6 fail, 4 pass | 0.34 Wh | 9 s | 98% | 2 |
+| granite3.1-dense:8b | dsh | waste_5_ambiguous_edit | 10 fail | 0.38 Wh | 10 s | 98% | 2 |
+| granite3.1-dense:8b | dsh | waste_6_huge_output | 10 fail | 0.39 Wh | 10 s | 98% | 2 |
+| granite3.1-dense:8b | dsh | waste_7_already_done | 10 pass | 0.31 Wh | 8 s | 98% | 2 |
+| llama3.1:8b | dsh | waste_1_impossible_test | 7 fail, 3 pass | 0.33 Wh | 9 s | 97% | 5 |
+| llama3.1:8b | dsh | waste_2_retry_bait | 7 fail, 3 pass | 0.19 Wh | 6 s | 96% | 3 |
+| llama3.1:8b | dsh | waste_3_misleading_error | 10 fail | 0.26 Wh | 7 s | 97% | 4 |
+| llama3.1:8b | dsh | waste_4_conflicting_specs | 8 fail, 2 pass | 0.35 Wh | 9 s | 97% | 7 |
+| llama3.1:8b | dsh | waste_5_ambiguous_edit | 10 fail | 0.26 Wh | 7 s | 97% | 5 |
+| llama3.1:8b | dsh | waste_6_huge_output | 8 fail, 2 pass | 0.23 Wh | 7 s | 97% | 3 |
+| llama3.1:8b | dsh | waste_7_already_done | 8 pass, 2 fail | 0.27 Wh | 7 s | 96% | 4 |
 | qwen3.5:9b | dsh | waste_1_impossible_test | 8 pass, 2 fail | 4.00 Wh | 94 s | 99% | 9 |
 | qwen3.5:9b | dsh | waste_2_retry_bait | 9 pass, 1 fail | 2.84 Wh | 70 s | 99% | 7 |
 | qwen3.5:9b | dsh | waste_3_misleading_error | 10 pass | 2.32 Wh | 56 s | 99% | 9 |
@@ -39,3 +63,4 @@ Each cell: tasks passed / runs · median GPU energy of a run. Energy is the GPU 
 - `dsh--qwen3.5_9b--waste_6_huge_output--9--20261101_174713`: GPU power samples cover only 98% of the run
 - `dsh--qwen3.5_9b--waste_7_already_done--7--20261101_174713`: GPU power samples cover only 98% of the run
 - `dsh--qwen3.5_9b--waste_7_already_done--9--20261101_174713`: GPU power samples cover only 99% of the run
+- `dsh--granite3.1-dense_2b--waste_4_conflicting_specs--3--20261105_185118`: GPU power samples cover only 96% of the run
