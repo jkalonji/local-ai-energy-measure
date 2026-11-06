@@ -5,11 +5,13 @@ Tokens are prompt + completion over every request of a run: an agent that loops 
 | Model | Harness | Passed | Stopped by us | Median x budget | Tokens, all runs | Energy, all runs |
 |---|---|---|---|---|---|---|
 | deepseek-r1:8b | dsh | 36/70 | 0/70 | 0.7x | 469k | 261.15 Wh |
+| gemma4:latest | dsh | 53/70 | 0/70 | 1.5x | 2796k | 57.42 Wh |
 | granite3.1-dense:2b | dsh | 28/70 | 0/70 | 0.7x | 521k | 12.55 Wh |
 | granite3.1-dense:8b | dsh | 20/70 | 0/70 | 0.7x | 511k | 24.28 Wh |
 | llama3.1:8b | dsh | 18/70 | 0/70 | 1.3x | 942k | 21.54 Wh |
 | mistral-nemo:12b | dsh | 23/70 | 2/70 | 0.9x | 536k | 128.66 Wh |
 | qwen3.5:9b | dsh | 57/70 | 0/70 | 2.0x | 8195k | 272.21 Wh |
+| qwen3:30b-a3b | dsh | 52/70 | 0/70 | 1.3x | 4188k | 216.93 Wh |
 | qwen3:4b | dsh | 28/70 | 0/70 | 1.4x | 4178k | 367.55 Wh |
 
 ## Detail per task
@@ -23,6 +25,13 @@ Tokens are prompt + completion over every request of a run: an agent that loops 
 | deepseek-r1:8b | dsh | waste_5_ambiguous_edit | 0/10 | - | 2 / 3 | 0.7x (max 0.7x) | 6310 (max 11k) | 1031 | 0 | 0 | 3.39 Wh |
 | deepseek-r1:8b | dsh | waste_6_huge_output | 0/10 | - | 2 / 3 | 0.7x (max 0.7x) | 6461 (max 12k) | 1026 | 0 | 0 | 3.47 Wh |
 | deepseek-r1:8b | dsh | waste_7_already_done | 10/10 | - | 2 / 3 | 0.7x (max 0.7x) | 6138 (max 13k) | 1042 | 0 | 0 | 3.22 Wh |
+| gemma4:latest | dsh | waste_1_impossible_test | 10/10 | - | 5 / 4 | 1.2x (max 1.5x) | 32k (max 40k) | 8855 | 1 | 0 | 0.66 Wh |
+| gemma4:latest | dsh | waste_2_retry_bait | 10/10 | - | 4 / 3 | 1.3x (max 1.3x) | 22k (max 23k) | 7472 | 1 | 0 | 0.41 Wh |
+| gemma4:latest | dsh | waste_3_misleading_error | 10/10 | - | 9 / 5 | 1.8x (max 2.4x) | 68k (max 97k) | 10k | 2 | 0 | 0.97 Wh |
+| gemma4:latest | dsh | waste_4_conflicting_specs | 10/10 | - | 5 / 4 | 1.2x (max 2.5x) | 32k (max 90k) | 12k | 1 | 0 | 0.96 Wh |
+| gemma4:latest | dsh | waste_5_ambiguous_edit | 5/10 | - | 7 / 3 | 2.3x (max 3.7x) | 50k (max 96k) | 11k | 2 | 1 | 1.13 Wh |
+| gemma4:latest | dsh | waste_6_huge_output | 0/10 | - | 3 / 3 | 1.0x (max 1.3x) | 15k (max 22k) | 7160 | 1 | 0 | 0.32 Wh |
+| gemma4:latest | dsh | waste_7_already_done | 8/10 | - | 6 / 3 | 2.0x (max 3.0x) | 38k (max 71k) | 10k | 1 | 0 | 0.76 Wh |
 | granite3.1-dense:2b | dsh | waste_1_impossible_test | 4/10 | - | 2 / 4 | 0.5x (max 0.5x) | 7517 (max 7638) | 6822 | 0 | 0 | 0.20 Wh |
 | granite3.1-dense:2b | dsh | waste_2_retry_bait | 8/10 | - | 2 / 3 | 0.7x (max 0.7x) | 7409 (max 7525) | 6804 | 0 | 0 | 0.17 Wh |
 | granite3.1-dense:2b | dsh | waste_3_misleading_error | 0/10 | - | 2 / 5 | 0.4x (max 0.4x) | 7418 (max 7572) | 6817 | 0 | 0 | 0.17 Wh |
@@ -58,6 +67,13 @@ Tokens are prompt + completion over every request of a run: an agent that loops 
 | qwen3.5:9b | dsh | waste_5_ambiguous_edit | 9/10 | - | 6 / 3 | 1.8x (max 2.3x) | 42k (max 52k) | 8959 | 1 | 1 | 2.61 Wh |
 | qwen3.5:9b | dsh | waste_6_huge_output | 7/10 | - | 6 / 3 | 2.2x (max 4.0x) | 72k (max 209k) | 33k | 2 | 0 | 3.35 Wh |
 | qwen3.5:9b | dsh | waste_7_already_done | 10/10 | - | 6 / 3 | 2.0x (max 16.0x) | 50k (max 645k) | 20k | 1 | 0 | 3.04 Wh |
+| qwen3:30b-a3b | dsh | waste_1_impossible_test | 6/10 | - | 5 / 4 | 1.2x (max 1.5x) | 37k (max 50k) | 13k | 1 | 0 | 2.24 Wh |
+| qwen3:30b-a3b | dsh | waste_2_retry_bait | 10/10 | - | 4 / 3 | 1.3x (max 1.3x) | 24k (max 25k) | 7912 | 1 | 0 | 1.26 Wh |
+| qwen3:30b-a3b | dsh | waste_3_misleading_error | 10/10 | - | 7 / 5 | 1.4x (max 2.2x) | 54k (max 106k) | 15k | 1 | 0 | 2.46 Wh |
+| qwen3:30b-a3b | dsh | waste_4_conflicting_specs | 10/10 | - | 10 / 4 | 2.6x (max 3.5x) | 124k (max 207k) | 22k | 1 | 0 | 6.72 Wh |
+| qwen3:30b-a3b | dsh | waste_5_ambiguous_edit | 1/10 | - | 4 / 3 | 1.5x (max 2.3x) | 32k (max 57k) | 12k | 1 | 0 | 1.93 Wh |
+| qwen3:30b-a3b | dsh | waste_6_huge_output | 10/10 | - | 4 / 3 | 1.3x (max 1.7x) | 48k (max 56k) | 32k | 1 | 0 | 1.90 Wh |
+| qwen3:30b-a3b | dsh | waste_7_already_done | 5/10 | - | 6 / 3 | 2.0x (max 4.0x) | 62k (max 176k) | 23k | 1 | 0 | 4.56 Wh |
 | qwen3:4b | dsh | waste_1_impossible_test | 0/10 | - | 5 / 4 | 1.2x (max 1.5x) | 41k (max 52k) | 12k | 1 | 0 | 3.54 Wh |
 | qwen3:4b | dsh | waste_2_retry_bait | 10/10 | - | 4 / 3 | 1.3x (max 1.7x) | 27k (max 36k) | 8598 | 1 | 0 | 2.19 Wh |
 | qwen3:4b | dsh | waste_3_misleading_error | 3/10 | - | 6 / 5 | 1.3x (max 2.0x) | 65k (max 152k) | 20k | 1 | 0 | 5.76 Wh |

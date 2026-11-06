@@ -1,8 +1,10 @@
 model,harness,runs,passed,pass_rate,median_energy_wh,median_duration_s,not_run
 deepseek-r1:8b,dsh,70,36,0.514286,3.45771,76.4897,
+gemma4:latest,dsh,70,53,0.757143,0.756074,20.685,
 granite3.1-dense:2b,dsh,70,28,0.4,0.174763,5.34612,
 granite3.1-dense:8b,dsh,70,20,0.285714,0.350625,9.12966,
 llama3.1:8b,dsh,70,18,0.257143,0.25601,7.22992,
 mistral-nemo:12b,dsh,70,23,0.328571,0.158147,6.1417,
 qwen3.5:9b,dsh,70,57,0.814286,3.18919,74.8354,
+qwen3:30b-a3b,dsh,70,52,0.742857,2.14506,103.459,
 qwen3:4b,dsh,130,42,0.323077,5.47715,114.558,

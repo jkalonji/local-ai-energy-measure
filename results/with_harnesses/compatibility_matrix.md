@@ -5,11 +5,13 @@ Each cell: tasks passed / runs · median GPU energy of a run. Energy is the GPU 
 | Model | dsh |
 |---|---|
 | deepseek-r1:8b | 36/70 · 3.46 Wh |
+| gemma4:latest | 53/70 · 0.76 Wh |
 | granite3.1-dense:2b | 28/70 · 0.17 Wh |
 | granite3.1-dense:8b | 20/70 · 0.35 Wh |
 | llama3.1:8b | 18/70 · 0.26 Wh |
 | mistral-nemo:12b | 23/70 · 0.16 Wh |
 | qwen3.5:9b | 57/70 · 3.19 Wh |
+| qwen3:30b-a3b | 52/70 · 2.15 Wh |
 | qwen3:4b | 42/130 · 5.48 Wh |
 
 ## Detail per task
@@ -23,6 +25,13 @@ Each cell: tasks passed / runs · median GPU energy of a run. Energy is the GPU 
 | deepseek-r1:8b | dsh | waste_5_ambiguous_edit | 10 fail | 3.39 Wh | 74 s | 100% | 2 |
 | deepseek-r1:8b | dsh | waste_6_huge_output | 10 fail | 3.47 Wh | 76 s | 100% | 2 |
 | deepseek-r1:8b | dsh | waste_7_already_done | 10 pass | 3.22 Wh | 72 s | 100% | 2 |
+| gemma4:latest | dsh | waste_1_impossible_test | 10 pass | 0.66 Wh | 18 s | 99% | 5 |
+| gemma4:latest | dsh | waste_2_retry_bait | 10 pass | 0.41 Wh | 14 s | 94% | 4 |
+| gemma4:latest | dsh | waste_3_misleading_error | 10 pass | 0.97 Wh | 27 s | 98% | 9 |
+| gemma4:latest | dsh | waste_4_conflicting_specs | 10 pass | 0.96 Wh | 26 s | 99% | 5 |
+| gemma4:latest | dsh | waste_5_ambiguous_edit | 5 fail, 5 pass | 1.13 Wh | 30 s | 99% | 7 |
+| gemma4:latest | dsh | waste_6_huge_output | 10 fail | 0.32 Wh | 10 s | 97% | 3 |
+| gemma4:latest | dsh | waste_7_already_done | 8 pass, 2 fail | 0.76 Wh | 21 s | 98% | 6 |
 | granite3.1-dense:2b | dsh | waste_1_impossible_test | 6 fail, 4 pass | 0.20 Wh | 6 s | 97% | 2 |
 | granite3.1-dense:2b | dsh | waste_2_retry_bait | 8 pass, 2 fail | 0.17 Wh | 5 s | 97% | 2 |
 | granite3.1-dense:2b | dsh | waste_3_misleading_error | 10 fail | 0.17 Wh | 5 s | 97% | 2 |
@@ -58,6 +67,13 @@ Each cell: tasks passed / runs · median GPU energy of a run. Energy is the GPU 
 | qwen3.5:9b | dsh | waste_5_ambiguous_edit | 9 pass, 1 fail | 2.61 Wh | 62 s | 100% | 5 |
 | qwen3.5:9b | dsh | waste_6_huge_output | 7 pass, 3 error | 3.35 Wh | 78 s | 99% | 6 |
 | qwen3.5:9b | dsh | waste_7_already_done | 10 pass | 3.04 Wh | 74 s | 99% | 6 |
+| qwen3:30b-a3b | dsh | waste_1_impossible_test | 6 pass, 4 fail | 2.24 Wh | 109 s | 100% | 5 |
+| qwen3:30b-a3b | dsh | waste_2_retry_bait | 10 pass | 1.26 Wh | 61 s | 98% | 4 |
+| qwen3:30b-a3b | dsh | waste_3_misleading_error | 10 pass | 2.46 Wh | 120 s | 100% | 7 |
+| qwen3:30b-a3b | dsh | waste_4_conflicting_specs | 10 pass | 6.72 Wh | 327 s | 100% | 10 |
+| qwen3:30b-a3b | dsh | waste_5_ambiguous_edit | 9 fail, 1 pass | 1.93 Wh | 93 s | 100% | 4 |
+| qwen3:30b-a3b | dsh | waste_6_huge_output | 10 pass | 1.90 Wh | 73 s | 99% | 4 |
+| qwen3:30b-a3b | dsh | waste_7_already_done | 5 fail, 5 pass | 4.56 Wh | 222 s | 100% | 6 |
 | qwen3:4b | dsh | office_1_sum_column | 8 pass, 2 fail | 8.16 Wh | 168 s | 100% | 7 |
 | qwen3:4b | dsh | office_2_xlsx_total | 5 pass, 4 fail, 1 timeout | 6.32 Wh | 131 s | 100% | 6 |
 | qwen3:4b | dsh | office_3_clean_pivot | 9 fail, 1 timeout | 7.30 Wh | 152 s | 100% | 6 |
@@ -132,3 +148,13 @@ Each cell: tasks passed / runs · median GPU energy of a run. Energy is the GPU 
 - `dsh--mistral-nemo_12b--waste_5_ambiguous_edit--10--20261105_200004`: GPU power samples cover only 95% of the run
 - `dsh--mistral-nemo_12b--waste_6_huge_output--3--20261105_200004`: GPU power samples cover only 94% of the run
 - `dsh--mistral-nemo_12b--waste_6_huge_output--4--20261105_200004`: GPU power samples cover only 94% of the run
+- `dsh--gemma4_latest--waste_1_impossible_test--9--20261106_102816`: GPU power samples cover only 98% of the run
+- `dsh--gemma4_latest--waste_2_retry_bait--7--20261106_102816`: GPU power samples cover only 92% of the run
+- `dsh--gemma4_latest--waste_3_misleading_error--8--20261106_102816`: GPU power samples cover only 99% of the run
+- `dsh--gemma4_latest--waste_4_conflicting_specs--3--20261106_102816`: GPU power samples cover only 97% of the run
+- `dsh--gemma4_latest--waste_4_conflicting_specs--8--20261106_102816`: GPU power samples cover only 96% of the run
+- `dsh--gemma4_latest--waste_5_ambiguous_edit--7--20261106_102816`: GPU power samples cover only 97% of the run
+- `dsh--gemma4_latest--waste_6_huge_output--1--20261106_102816`: GPU power samples cover only 95% of the run
+- `dsh--gemma4_latest--waste_6_huge_output--9--20261106_102816`: GPU power samples cover only 95% of the run
+- `dsh--gemma4_latest--waste_7_already_done--4--20261106_102816`: GPU power samples cover only 98% of the run
+- `dsh--qwen3_30b-a3b--waste_6_huge_output--5--20261106_111343`: GPU power samples cover only 99% of the run
